@@ -173,6 +173,35 @@ accessibility_advice() {
 ' "$DOMAIN" "$HELPER_LABEL"
 }
 
+# Puts a freshly built helper where the app expects it, through a new inode rather than by
+# writing over the old file.
+#
+# Overwriting an executable is not merely racy on macOS, it is destructive. Write over a file
+# while any process is executing it and the kernel's cached page hashes for that inode stop
+# matching its contents, so *every later* exec of that path is killed outright with SIGKILL --
+# and it stays that way after the original process has long gone. Measured: `cp` over an idle
+# binary and running it exits 0; `cp` over a running one makes every run after it exit 137
+# (128 + SIGKILL).
+#
+# Both helpers were installed that way, and the recorder is the one that got executed often
+# enough to collide: the server runs `sb-recorder --permissions` on several page loads (30 s
+# cache -- src/domain/meetings/tools.ts), and the desktop app re-runs `fetch-assets` on every
+# single launch. One `cp` landing on top of one of those checks poisoned the binary for the rest
+# of the session, which is exactly what "the recorder sometimes doesn't start" and a bare
+# "recorder exited with SIGKILL" with no stderr behind it were: the helper was killed before it
+# ran a single instruction, so it had nothing to say for itself.
+#
+# `mv` within the same directory is a rename: the new file gets its own inode, anyone still
+# running the old one keeps a working copy of it, and no byte is ever written through a path that
+# something might be executing.
+install_binary() {
+  local src="$1" dest="$2"
+  mkdir -p "$(dirname "$dest")"
+  cp "$src" "$dest.new" || return 1
+  chmod +x "$dest.new"
+  mv -f "$dest.new" "$dest"
+}
+
 build_helper() {
   if ! command -v swift >/dev/null; then
     say "swift not found; skipping the activity helper. Install the Xcode command line tools and rerun setup to enable it."
@@ -183,8 +212,7 @@ build_helper() {
     say "the activity helper did not build; skipping it"
     return 1
   fi
-  mkdir -p "$(dirname "$HELPER_BIN")"
-  cp "$HELPER_SRC/.build/release/sb-activity" "$HELPER_BIN" || return 1
+  install_binary "$HELPER_SRC/.build/release/sb-activity" "$HELPER_BIN" || return 1
   ok "helper built at $HELPER_BIN"
   say "this rebuild voided any Accessibility grant the previous build had -- 'scripts/brain.sh status' says how to restore it"
 }
@@ -227,8 +255,7 @@ build_recorder() {
     say "the meeting recorder did not build; skipping it"
     return 1
   fi
-  mkdir -p "$(dirname "$RECORDER_BIN")"
-  cp "$RECORDER_SRC/.build/release/sb-recorder" "$RECORDER_BIN" || return 1
+  install_binary "$RECORDER_SRC/.build/release/sb-recorder" "$RECORDER_BIN" || return 1
   ok "recorder built at $RECORDER_BIN"
 }
 
