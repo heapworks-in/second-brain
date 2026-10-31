@@ -13,6 +13,16 @@
   <key>NSMicrophoneUsageDescription</key>
   <string>Second Brain records meetings you start, so it can transcribe them on this Mac. Audio never leaves your machine.</string>
 
+  <!--
+    The Core Audio process tap in helper/recorder (Capture.swift) is what mixes system output into
+    a recording, and Apple requires this key for it. Without it TCC refuses *silently*: the tap is
+    created, no error comes back, and it delivers nothing -- so the recorder reported
+    `systemAudio: true` for a session that captured the microphone alone. No prompt, no log line,
+    nothing to tell anyone the other half of the meeting was never recorded.
+  -->
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Second Brain records the other side of a meeting -- what comes out of your speakers -- alongside your microphone, so the transcript has both halves. Audio never leaves your machine.</string>
+
   <key>NSCalendarsUsageDescription</key>
   <string>Second Brain reads your calendar to show your meetings and offer to record them.</string>
 
