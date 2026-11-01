@@ -84,6 +84,34 @@ describe("pickAutoStart", () => {
     expect(pickAutoStart(t.db, NOW, ON)).toBeNull();
   });
 
+  it("skips a meeting whose only link is an agenda, and takes the one with a real call link", () => {
+    // What a work calendar is mostly made of: every invite carries *some* url. Gating on that url
+    // recorded all of them, which is the whole reason this rule exists.
+    replaceCalendarEvents(t.db, [
+      event({ externalId: "agenda", title: "1:1 with my manager", startsAt: at(-1), hasCallLink: false, joinUrl: null, notes: "Agenda: https://confluence.corp/x/Page" }),
+      event({ externalId: "ticket", title: "Sprint planning", startsAt: at(-1), hasCallLink: false, joinUrl: null, notes: "https://jira.corp/browse/ENG-1" }),
+      event({ externalId: "zoom", title: "Design review", startsAt: at(0), hasCallLink: false, joinUrl: null, notes: "Join: https://corp.zoom.us/j/1" }),
+    ]);
+    expect(pickAutoStart(t.db, NOW, ON)?.title).toBe("Design review");
+  });
+
+  it("auto-records each provider the EventKit helper recognises", () => {
+    for (const [i, url] of [
+      "https://corp.zoom.us/j/1",
+      "https://teams.microsoft.com/l/meetup-join/x",
+      "https://meet.google.com/abc-defg-hij",
+      "https://acme.webex.com/meet/x",
+    ].entries()) {
+      const fresh = makeTestDb();
+      try {
+        replaceCalendarEvents(fresh.db, [event({ externalId: `p${i}`, title: "Call", startsAt: at(0), hasCallLink: false, joinUrl: null, notes: url })]);
+        expect(pickAutoStart(fresh.db, NOW, ON)?.title).toBe("Call");
+      } finally {
+        fresh.cleanup();
+      }
+    }
+  });
+
   it("takes a linkless meeting once the call-link rule is off", () => {
     replaceCalendarEvents(t.db, [event({ externalId: "nolink", title: "Desk chat", startsAt: at(0), joinUrl: null, hasCallLink: false })]);
     expect(pickAutoStart(t.db, NOW, ON)).toBeNull();

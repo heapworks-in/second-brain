@@ -22,7 +22,8 @@ const NEEDS_CALL_LINK_KEY = "meetings.autoRecordNeedsCallLink";
 export interface AutoRecordSettings {
   /** Off until someone turns it on: nothing records itself by surprise. */
   autoRecord: boolean;
-  /** On by default, so a desk conversation in the diary is not recorded. */
+  /** On by default, so a desk conversation in the diary is not recorded. Means a Zoom, Teams,
+   * Meet or Webex link specifically -- `hasCallLink`, not merely some url in the invite. */
   autoRecordNeedsCallLink: boolean;
 }
 
@@ -54,7 +55,7 @@ function alreadyRecorded(db: DB, ev: CalendarEvent): boolean {
  * person would record by hand: not an all-day block, not marked no-record, not already
  * recorded, decided `going` (a clear yes — `maybe` is recordable by hand but never auto-started,
  * and a series declined with no per-occurrence override still resolves to `not-going`), and,
- * while the call-link rule is on, one with somewhere to join.
+ * while the call-link rule is on, one that is actually a call: a Zoom, Teams, Meet or Webex link.
  */
 export function pickAutoStart(db: DB, now: Date, settings: AutoRecordSettings): CalendarEvent | null {
   if (!settings.autoRecord) return null;
@@ -74,7 +75,11 @@ export function pickAutoStart(db: DB, now: Date, settings: AutoRecordSettings): 
     if (start < earliest || start > latest) continue;
     const decision = effectiveDecision(ev, ev.seriesId ? (decisions.get(ev.seriesId) ?? null) : null);
     if (ev.allDay || ev.noRecord || decision !== "going") continue;
-    if (settings.autoRecordNeedsCallLink && !ev.joinUrl) continue;
+    // `hasCallLink`, not `joinUrl`: the latter falls back to any url in the invite (see
+    // `joinUrlFrom`), so gating on it meant an agenda page or a Jira ticket in the body was
+    // enough to record a desk conversation. Only a recognised provider counts now. Recording by
+    // hand is unaffected -- the button records whatever is in front of you.
+    if (settings.autoRecordNeedsCallLink && ev.hasCallLink !== 1) continue;
     if (alreadyRecorded(db, ev)) continue;
     return ev;
   }

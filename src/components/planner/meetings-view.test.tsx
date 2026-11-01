@@ -224,7 +224,7 @@ describe("MeetingsView", () => {
     const auto = await screen.findByRole("switch", { name: "Record meetings automatically" });
     expect(auto.getAttribute("aria-checked")).toBe("false");
     // The join-link rule only means something once meetings record themselves.
-    expect(screen.queryByRole("switch", { name: "Only with a join link" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Only video calls" })).toBeNull();
   });
 
   it("saves each switch as it is flipped", async () => {
@@ -238,7 +238,7 @@ describe("MeetingsView", () => {
     const patch = fetchMock.mock.calls.find(([url, init]) => String(url) === "/api/settings/meetings" && init?.method === "PATCH");
     expect(JSON.parse(String(patch![1]?.body))).toEqual({ autoRecord: true });
 
-    const link = screen.getByRole("switch", { name: "Only with a join link" });
+    const link = screen.getByRole("switch", { name: "Only video calls" });
     expect(link.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(link);
     await waitFor(() => expect(link.getAttribute("aria-checked")).toBe("false"));

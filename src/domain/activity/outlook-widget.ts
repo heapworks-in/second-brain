@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { DB } from "@/db/client";
 import type { CalendarEventInput } from "./calendar";
-import { joinUrlFrom, localDay, replaceCalendarEvents } from "./calendar";
+import { callLinkFrom, joinUrlFrom, localDay, replaceCalendarEvents } from "./calendar";
 import { eq, sql } from "drizzle-orm";
 import { calendarEvents } from "@/db/schema";
 import { getSetting, setSetting } from "@/domain/settings";
@@ -139,6 +139,7 @@ export function parseOutlookWidgetStore(raw: unknown): CalendarEventInput[] {
     const location = str(event.location);
     const notes = str(event.notes);
     const joinUrl = joinUrlFrom(location, notes);
+    const isCall = callLinkFrom(location, notes) !== null;
 
     out.push({
       externalId,
@@ -146,7 +147,7 @@ export function parseOutlookWidgetStore(raw: unknown): CalendarEventInput[] {
       startsAt: macTimeToIso(start),
       endsAt: macTimeToIso(end),
       attendees: 0,
-      hasCallLink: joinUrl !== null,
+      hasCallLink: isCall,
       location,
       joinUrl,
       notes,

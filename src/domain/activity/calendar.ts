@@ -27,14 +27,34 @@ export interface CalendarEventInput {
   seriesId?: string;
 }
 
-/** Known meeting providers first; any https link is a usable fallback. */
+/** The providers whose links mean "this is a video call", matching the EventKit helper's own list
+ * (helper/activity/Sources/sb-activity/CalendarReader.swift) so the three sync paths agree. */
 const PROVIDER_RE = /https?:\/\/[^\s<>"')]*(?:teams\.microsoft\.com|zoom\.us|meet\.google\.com|webex\.com)[^\s<>"')]*/i;
 const ANY_RE = /https?:\/\/[^\s<>"')]+/i;
 
-/** The first meeting link in any of the texts, else the first url, else null. */
+/**
+ * The call link, or null — a recognised provider only.
+ *
+ * Deliberately separate from `joinUrlFrom`: "is this a video call?" and "is there anything to
+ * open?" are different questions, and answering the first with the second is what made
+ * auto-recording fire on everything. A work invite nearly always carries *some* link — an agenda
+ * page, a Jira ticket, a doc, a map pin — so the any-url fallback below marked a desk
+ * conversation as a call and the rule recorded it. Only this function decides `hasCallLink`, and
+ * so whether a meeting records itself.
+ */
+export function callLinkFrom(...texts: (string | null | undefined)[]): string | null {
+  return texts.filter(Boolean).join(" ").match(PROVIDER_RE)?.[0] ?? null;
+}
+
+/**
+ * Where to send someone who wants to join: the call link, else the first url in the texts.
+ *
+ * The fallback stays, because a "Join" button pointing at the only link in an invite is better
+ * than no button. It just no longer implies a call — see `callLinkFrom`.
+ */
 export function joinUrlFrom(...texts: (string | null | undefined)[]): string | null {
   const joined = texts.filter(Boolean).join(" ");
-  return joined.match(PROVIDER_RE)?.[0] ?? joined.match(ANY_RE)?.[0] ?? null;
+  return callLinkFrom(joined) ?? joined.match(ANY_RE)?.[0] ?? null;
 }
 
 /** Local calendar day (YYYY-MM-DD) of an ISO timestamp. Defined in `@/lib/time` so the
@@ -85,6 +105,10 @@ export function replaceCalendarEvents(
     for (const e of events) {
       if (Date.parse(e.endsAt) <= Date.parse(e.startsAt)) continue;
       const joinUrl = e.joinUrl ?? joinUrlFrom(e.location, e.notes);
+      // Asked of the texts, never of `joinUrl`, which may be any old link (see `joinUrlFrom`).
+      // `e.hasCallLink` is the EventKit helper's own strict answer and is trusted as it stands;
+      // reading it off `joinUrl` instead is what used to widen it straight back to "any url".
+      const isCall = e.hasCallLink || callLinkFrom(e.location, e.notes) !== null;
       // item_id, no_record, decision and decision_note are ours, not the calendar's: they stay
       // off the upsert so a refresh keeps them. e.seriesId is calendar-owned like title, so it
       // belongs inside the upsert and is refreshed every sync.
@@ -94,7 +118,7 @@ export function replaceCalendarEvents(
         startsAt: e.startsAt,
         endsAt: e.endsAt,
         attendees: e.attendees,
-        hasCallLink: joinUrl || e.hasCallLink ? 1 : 0,
+        hasCallLink: isCall ? 1 : 0,
         day: localDay(e.startsAt),
         organizer: e.organizer ?? "",
         attendeeNames: JSON.stringify(e.attendeeNames ?? []),

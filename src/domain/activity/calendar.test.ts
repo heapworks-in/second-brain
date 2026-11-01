@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { eq } from "drizzle-orm";
 import { activitySessions, calendarEvents } from "@/db/schema";
-import { replaceCalendarEvents, findMeetingFor, isInterview, captureMeeting, labelMeetings, localDay, dayBounds, listMeetings, joinUrlFrom } from "./calendar";
+import { replaceCalendarEvents, findMeetingFor, isInterview, captureMeeting, labelMeetings, localDay, dayBounds, listMeetings, joinUrlFrom, callLinkFrom } from "./calendar";
 import { ingestHeartbeat } from "./sessions";
 import { parseMeta } from "@/domain/items";
 
@@ -138,6 +138,42 @@ describe("calendar", () => {
     expect(joinUrlFrom("room 4", "https://zoom.us/j/1", "see https://example.com")).toBe("https://zoom.us/j/1");
     expect(joinUrlFrom(null, "notes https://example.com/x")).toBe("https://example.com/x");
     expect(joinUrlFrom("nothing")).toBeNull();
+  });
+
+  it("callLinkFrom answers only for a real provider, where joinUrlFrom would take any link", () => {
+    for (const url of [
+      "https://corp.zoom.us/j/9876543210",
+      "https://teams.microsoft.com/l/meetup-join/xyz",
+      "https://meet.google.com/abc-defg-hij",
+      "https://acme.webex.com/meet/someone",
+    ]) {
+      expect(callLinkFrom("notes", `Join: ${url}`)).toBe(url);
+    }
+    // The links a work invite actually carries. Each one used to count as a call, which is what
+    // made auto-record fire on agendas, tickets and lunch.
+    for (const notes of [
+      "Agenda: https://confluence.corp/x/AgendaPage",
+      "Doc: https://docs.google.com/document/d/abc",
+      "Board: https://jira.corp/browse/ENG-123",
+      "https://maps.apple.com/?q=cafe",
+    ]) {
+      expect(callLinkFrom(null, notes)).toBeNull();
+      expect(joinUrlFrom(null, notes)).not.toBeNull();
+    }
+  });
+
+  it("stores hasCallLink from the call link, not from whatever url the invite happened to carry", () => {
+    replaceCalendarEvents(t.db, [
+      { externalId: "agenda", title: "1:1", startsAt: at(0), endsAt: at(1800), attendees: 2, hasCallLink: false, notes: "Agenda: https://confluence.corp/x/Page" },
+      { externalId: "zoom", title: "Standup", startsAt: at(0), endsAt: at(1800), attendees: 5, hasCallLink: false, notes: "https://corp.zoom.us/j/1" },
+    ]);
+    const rows = t.db.select().from(calendarEvents).all();
+    const agenda = rows.find((r) => r.externalId === "agenda")!;
+    const zoom = rows.find((r) => r.externalId === "zoom")!;
+    expect(agenda.hasCallLink).toBe(0);
+    // The Join button still has somewhere to go -- it just does not mean "this is a call".
+    expect(agenda.joinUrl).toBe("https://confluence.corp/x/Page");
+    expect(zoom.hasCallLink).toBe(1);
   });
 
   it("keeps the row id, item_id, and no_record when an event is updated", () => {

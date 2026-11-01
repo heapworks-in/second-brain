@@ -392,8 +392,9 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
                   active={settings.autoRecordNeedsCallLink}
                   onClick={() => saveSetting({ autoRecordNeedsCallLink: !settings.autoRecordNeedsCallLink })}
                   className="h-6 px-2 text-[11.5px]"
+                  title="A Zoom, Teams, Meet or Webex link. Anything else still records when you press Record."
                 >
-                  Only with a join link
+                  Only video calls
                 </Chip>
               )}
             </div>

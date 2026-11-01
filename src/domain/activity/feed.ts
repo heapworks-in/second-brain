@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { calendarEvents, settings } from "@/db/schema";
 import { getSetting, setSetting } from "@/domain/settings";
 import { addDays } from "./report";
-import { joinUrlFrom, localDay, replaceCalendarEvents, type CalendarEventInput } from "./calendar";
+import { callLinkFrom, joinUrlFrom, localDay, replaceCalendarEvents, type CalendarEventInput } from "./calendar";
 
 /** The settings a published calendar feed lives in. */
 export const FEED_URL_KEY = "calendar.feedUrl";
@@ -110,13 +110,15 @@ function occurrenceInput(ev: ICAL.Event, start: ICAL.Time, end: ICAL.Time, exter
   const attendees = ev.attendees.map((p) => personName(p)).filter(Boolean);
   const teams = text(comp, "x-microsoft-skypeteamsmeetingurl") || text(comp, "x-microsoft-onlinemeetingexternallink");
   const joinUrl = joinUrlFrom(teams, location, description);
+  // `x-microsoft-skypeteamsmeetingurl` is a call link by definition, whatever host it names.
+  const isCall = !!teams || callLinkFrom(location, description) !== null;
   return {
     externalId,
     title: ev.summary ?? "",
     startsAt: asInstant(start).toJSDate().toISOString(),
     endsAt: asInstant(end).toJSDate().toISOString(),
     attendees: attendees.length,
-    hasCallLink: joinUrl !== null,
+    hasCallLink: isCall,
     organizer: personName(comp.getFirstProperty("organizer")),
     attendeeNames: attendees,
     location,
