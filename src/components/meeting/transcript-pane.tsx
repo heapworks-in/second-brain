@@ -17,11 +17,37 @@ export function clock(seconds: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+/** The wall clock, to the second. `formatClock` in ../activity/format is the HH:MM one, which is
+ *  right for a meeting's start and wrong here: a transcript puts several lines inside the same
+ *  minute, and HH:MM would stamp a dozen of them identically. */
+export function timeOfDay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+/**
+ * When a line was said.
+ *
+ * The time of day, which is what someone reading a transcript back against their own memory or
+ * their calendar actually wants, worked out from the session's start plus the offset whisper
+ * reported. Dropped-in audio has no session behind it and so no time of day to give: those fall
+ * back to the offset into the recording, which is all that file knows about itself.
+ */
+export function segmentStamp(start: number, startedAt: string | null): string {
+  if (!startedAt) return clock(start);
+  const began = Date.parse(startedAt);
+  return Number.isNaN(began) ? clock(start) : timeOfDay(new Date(began + start * 1000).toISOString());
+}
+
 interface Props {
   live: LiveSegmentDTO[];
   segments: Segment[];
   /** True while the recorder is running: the live list is still growing. */
   recording: boolean;
+  /** When the session began, so each line can say what time of day it was said. Null for audio
+   *  that was dropped in rather than recorded. */
+  startedAt: string | null;
   /** Set once the final pass has replaced the live guesses. */
   finalReady: boolean;
   /** True while the final pass is running, so the pane says so rather than looking empty. */
@@ -37,7 +63,7 @@ interface Props {
  * live pass, appended to as it goes; afterwards it is the final transcript, timestamped and
  * filterable. Before either, it is the offer to start.
  */
-export function TranscriptPane({ live, segments, recording, finalReady, transcribing, blocked, recordTitle, onRecord }: Props) {
+export function TranscriptPane({ live, segments, recording, startedAt, finalReady, transcribing, blocked, recordTitle, onRecord }: Props) {
   const [filter, setFilter] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -67,7 +93,7 @@ export function TranscriptPane({ live, segments, recording, finalReady, transcri
   }
 
   function copy() {
-    const text = segments.map((s) => `${clock(s.start)} ${s.text}`).join("\n");
+    const text = segments.map((s) => `${segmentStamp(s.start, startedAt)} ${s.text}`).join("\n");
     void navigator.clipboard?.writeText(text).then(
       () => setCopied(true),
       () => setCopied(false),
@@ -115,7 +141,12 @@ export function TranscriptPane({ live, segments, recording, finalReady, transcri
             <ol role="list" className="list-none m-0 p-0 flex flex-col gap-1.5">
               {shown.map((s, i) => (
                 <li key={`${s.start}-${i}`} className="flex gap-3 items-baseline">
-                  <span className="font-mono text-[11px] text-fg-faint tabular-nums shrink-0">{clock(s.start)}</span>
+                  <span
+                    className="font-mono text-[11px] text-fg-faint tabular-nums shrink-0"
+                    title={startedAt ? `${clock(s.start)} into the recording` : undefined}
+                  >
+                    {segmentStamp(s.start, startedAt)}
+                  </span>
                   <span className="text-[13.5px] leading-relaxed">{s.text}</span>
                 </li>
               ))}
@@ -124,8 +155,12 @@ export function TranscriptPane({ live, segments, recording, finalReady, transcri
         ) : live.length > 0 ? (
           <ol role="list" className="list-none m-0 p-0 flex flex-col gap-1.5">
             {live.map((s, i) => (
-              <li key={`${s.at}-${i}`} className="text-[13.5px] leading-relaxed text-fg-muted">
-                {s.text}
+              <li key={`${s.at}-${i}`} className="flex gap-3 items-baseline">
+                {/* `at` has been on every live segment since the live pass was written (see
+                    LiveSegment in domain/meetings/live.ts) and was simply dropped here, so the
+                    one transcript you read *during* a meeting was the one with no times on it. */}
+                <span className="font-mono text-[11px] text-fg-faint tabular-nums shrink-0">{timeOfDay(s.at)}</span>
+                <span className="text-[13.5px] leading-relaxed text-fg-muted">{s.text}</span>
               </li>
             ))}
           </ol>

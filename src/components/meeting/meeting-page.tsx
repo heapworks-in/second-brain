@@ -312,6 +312,7 @@ export function MeetingPage({ item: initial, event, tasks, hasSummaryModel, reco
           live={live}
           segments={segments}
           recording={isRecording}
+          startedAt={recording?.startedAt ?? null}
           finalReady={finalReady}
           transcribing={transcribing}
           blocked={recorder.blocked}

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import type { ActivityMeetingDTO, ItemDTO, RecorderStatusDTO, TaskDTO } from "@/lib/dto";
 import { MeetingPage } from "./meeting-page";
+import { timeOfDay } from "./transcript-pane";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
@@ -200,7 +201,7 @@ describe("MeetingPage", () => {
     expect(live.querySelector(".font-mono")).toBeNull();
   });
 
-  it("shows final segments with mm:ss and filters them", () => {
+  it("shows final segments with the time each line was said, and filters them", () => {
     stubFetch();
     mount(
       item({
@@ -212,8 +213,11 @@ describe("MeetingPage", () => {
         final_transcript_ready: true,
       }),
     );
-    expect(screen.getByText("00:00")).toBeTruthy();
-    expect(screen.getByText("01:05")).toBeTruthy();
+    // The time of day, worked out from the session's start plus whisper's offset; the offset
+    // itself stays as the hover text.
+    expect(screen.getByText(timeOfDay("2026-09-22T10:30:00.000Z"))).toBeTruthy();
+    expect(screen.getByText(timeOfDay("2026-09-22T10:31:05.400Z"))).toBeTruthy();
+    expect(screen.getByTitle("01:05 into the recording")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Filter transcript"), { target: { value: "recorder" } });
     expect(screen.queryByText("Good morning everyone")).toBeNull();
