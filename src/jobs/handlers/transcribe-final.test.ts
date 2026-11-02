@@ -50,13 +50,12 @@ describe("transcribe_final handler", () => {
   let t: TestDb;
   let model: string;
 
-  function handler(over: { hasSummaryModel?: () => boolean; ffmpegBin?: string | null } = {}) {
+  function handler(over: { ffmpegBin?: string | null } = {}) {
     return createTranscribeFinalHandler({
       db: t.db,
       whisperBin: FAKE_WHISPER,
       ffmpegBin: over.ffmpegBin === undefined ? null : over.ffmpegBin,
       finalModel: model,
-      hasSummaryModel: over.hasSummaryModel ?? (() => false),
     });
   }
 
@@ -93,15 +92,19 @@ describe("transcribe_final handler", () => {
     // and the audio itself is released on a retention timer.
     expect(m.liveTranscript).toEqual([{ at: "2026-09-22T10:00:00.000Z", text: "hello" }]);
     expect(getItemChunks(t.db, item.id).length).toBeGreaterThan(0);
-    expect(listJobs(t.db, { itemId: item.id }).map((j) => j.type)).toEqual(["transcribe_final", "embed"]);
+    expect(listJobs(t.db, { itemId: item.id }).map((j) => j.type)).toEqual(["transcribe_final", "embed", "summarize_meeting"]);
   });
 
-  it("queues a summary as well when the local summary model is available", async () => {
+  // The summary used to be queued only when the model happened to be installed at this instant,
+  // and nothing ever queued one later: a meeting recorded while the app was still fetching its
+  // 4.4 GB model lost its summary permanently, with no error and no second chance. The handler
+  // itself records a reason when it has nothing to run, which is a state a person can see.
+  it("queues a summary whatever is installed, so the window can never be missed", async () => {
     const wavPath = writeWav(path.join("meetings", "2-recording.wav"));
     const item = createItem(t.db, { type: "meeting", title: "Standup", meta: { recording: { wavPath, state: "done" } } });
     const job = enqueueJob(t.db, "transcribe_final", { itemId: item.id, source: "recording" }, item.id);
 
-    await handler({ hasSummaryModel: () => true })(job);
+    await handler()(job);
 
     expect(listJobs(t.db, { itemId: item.id }).map((j) => j.type)).toEqual(["transcribe_final", "embed", "summarize_meeting"]);
   });
@@ -147,7 +150,7 @@ describe("transcribe_final handler", () => {
     const wavPath = writeWav(path.join("meetings", "3-recording.wav"));
     const item = createItem(t.db, { type: "meeting", title: "Standup", meta: { recording: { wavPath, state: "done" } } });
     const job = enqueueJob(t.db, "transcribe_final", { itemId: item.id, source: "recording" }, item.id);
-    const run = createTranscribeFinalHandler({ db: t.db, whisperBin: null, ffmpegBin: null, finalModel: model, hasSummaryModel: () => false });
+    const run = createTranscribeFinalHandler({ db: t.db, whisperBin: null, ffmpegBin: null, finalModel: model });
     await expect(run(job)).rejects.toThrow(/whisper/i);
     expect(getItem(t.db, item.id)!.status).toBe("failed");
   });

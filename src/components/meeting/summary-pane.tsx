@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, ClipboardCheck, Copy, Plus } from "lucide-react";
+import { Check, ClipboardCheck, Copy, Plus, Sparkles } from "lucide-react";
 import type { TaskDTO } from "@/lib/dto";
 import { Button, Input } from "../ui";
 import { hasRecapContent, meetingRecap } from "@/domain/meetings/recap";
@@ -34,6 +34,12 @@ interface Props {
   accepted: number[];
   home: TaskHome;
   onAccepted: (index: number, task: TaskDTO) => void;
+  /** True once there is a transcript or notes: nothing to summarise before that. */
+  canSummarize: boolean;
+  /** Set while a pass is on its way, so the button says so rather than inviting a second one. */
+  pending: boolean;
+  /** Told a pass is on its way, so the page starts watching for it to land. */
+  onQueued: () => void;
 }
 
 /**
@@ -41,11 +47,34 @@ interface Props {
  * somebody now owns. Each action is a row the person can reword before accepting; accepting
  * one creates a task that remembers this meeting.
  */
-export function SummaryPane({ itemId, title, summary, summaryError, summaryGaps, hasSummaryModel, accepted, home, onAccepted }: Props) {
+export function SummaryPane({ itemId, title, summary, summaryError, summaryGaps, hasSummaryModel, accepted, home, onAccepted, canSummarize, pending, onQueued }: Props) {
   const [titles, setTitles] = useState<Record<number, string>>({});
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [queueing, setQueueing] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+
+  /** The summary is written by a background job, and until now the only thing that could ask for
+   *  one was the transcript job finishing -- so a meeting that missed that moment, for any
+   *  reason, had no way back. This is that way back. */
+  async function summarize() {
+    setQueueing(true);
+    setQueueError(null);
+    try {
+      const res = await fetch(`/api/meetings/${itemId}/summarize`, { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setQueueError(body?.error ?? "Could not start the summary");
+        return;
+      }
+      onQueued();
+    } catch {
+      setQueueError("Could not start the summary");
+    } finally {
+      setQueueing(false);
+    }
+  }
 
   async function accept(index: number, title: string) {
     setBusy(index);
@@ -79,11 +108,11 @@ export function SummaryPane({ itemId, title, summary, summaryError, summaryGaps,
         {/* The written recap is the point of the summary, not a by-product of it: a meeting whose
             decisions and owners were never confirmed back to the room is the one that goes wrong
             later. One button, already formatted, so sending it is not a separate piece of work. */}
+        <span className="flex-1" />
         {recap && (
           <Button
             size="sm"
             icon={copied ? ClipboardCheck : Copy}
-            className="ml-auto"
             onClick={() => {
               void navigator.clipboard.writeText(recap).then(() => {
                 setCopied(true);
@@ -94,6 +123,11 @@ export function SummaryPane({ itemId, title, summary, summaryError, summaryGaps,
             {copied ? "Copied" : "Copy recap"}
           </Button>
         )}
+        {canSummarize && (
+          <Button size="sm" icon={Sparkles} disabled={queueing || pending} onClick={() => void summarize()}>
+            {pending ? "Summarising" : summary || summaryError ? "Summarise again" : "Summarise"}
+          </Button>
+        )}
       </header>
 
       <div className="px-4 py-4 flex flex-col gap-5">
@@ -101,9 +135,15 @@ export function SummaryPane({ itemId, title, summary, summaryError, summaryGaps,
           <p className="text-[13.5px] leading-relaxed">{summary.summary}</p>
         ) : (
           <p className="text-[13px] text-fg-faint">
-            {hasSummaryModel ? "No summary yet. One is written once the final transcript lands" : "Run scripts/brain.sh setup to install the local summary model"}
+            {pending
+              ? "Writing the summary. It takes a few minutes on this machine"
+              : hasSummaryModel
+                ? "No summary yet. One is written once the final transcript lands"
+                : "Run scripts/brain.sh setup to install the local summary model"}
           </p>
         )}
+
+        {queueError && <p className="text-[12.5px] text-danger">{queueError}</p>}
 
         {summaryError && <p className="text-[12.5px] text-danger">The summary failed: {summaryError}</p>}
 

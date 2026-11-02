@@ -8,7 +8,6 @@ import type { JobHandler } from "@/jobs/worker";
 import { jobPayload } from "@/jobs/payload";
 import { enqueueJob } from "@/jobs/queue";
 import { getItem, parseMeta, rechunkItem, updateItem } from "@/domain/items";
-import { hasSummaryModel } from "@/providers/chat";
 import { checkTools } from "@/domain/meetings/tools";
 import { parseWhisperJson, segmentsToText, type Segment } from "@/domain/meetings/transcript";
 import type { RecordingMeta } from "@/domain/meetings/recorder";
@@ -27,8 +26,6 @@ export interface TranscribeFinalDeps {
   whisperBin?: string | null;
   ffmpegBin?: string | null;
   finalModel?: string | null;
-  /** Without the local model there is nothing to summarise with; injectable so tests never look. */
-  hasSummaryModel?: () => boolean;
 }
 
 interface MeetingMeta {
@@ -121,8 +118,12 @@ export function createTranscribeFinalHandler(deps: TranscribeFinalDeps): JobHand
       updateItem(db, itemId, { extractedText: segmentsToText(segments), status: "ready", error: null, meta: next as Record<string, unknown> });
       rechunkItem(db, itemId);
       enqueueJob(db, "embed", { itemId }, itemId);
-      const modelReady = deps.hasSummaryModel ?? hasSummaryModel;
-      if (modelReady()) enqueueJob(db, "summarize_meeting", { itemId }, itemId);
+      // Queued unconditionally. This used to be gated on the summary model being installed *at
+      // this instant*, and nothing ever queued one later: a meeting recorded while the app was
+      // still downloading its 4.4 GB model got no summary, no error, and no second chance. The
+      // handler already degrades to recording a reason on the item when it has nothing to run,
+      // which is a state the page can show and a person can retry.
+      enqueueJob(db, "summarize_meeting", { itemId }, itemId);
     } catch (err) {
       if (err instanceof TranscriptFailure) throw err;
       fail(itemId, err instanceof Error ? err.message : String(err));

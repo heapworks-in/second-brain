@@ -31,3 +31,20 @@ export function getChatProvider(): ChatProvider | null {
   if (!bin) return null;
   return createLlamaCppChatProvider(summaryModelPath(), bin);
 }
+
+/**
+ * Why a summary cannot be written right now, in words the meeting page can show, or null when
+ * one can.
+ *
+ * The model file and the binary that runs it are installed by two independent steps, and they
+ * fail independently: `ensure_llama_cli` gives up with a log line on a Mac without Homebrew
+ * while `fetch_model` still downloads all 4.4 GB of the model beside it. That left
+ * `hasSummaryModel()` true, `getChatProvider()` null, and a summary job that completed having
+ * done nothing at all -- so the page said "No summary yet" for ever, and nothing anywhere said
+ * why. A reason the person can act on is the whole point of this function.
+ */
+export function summaryUnavailable(): string | null {
+  if (!hasSummaryModel()) return "the local summary model is not installed yet — it is a 4.4 GB download the app fetches in the background";
+  if (!summaryBinary()) return "llama-cli is not installed, so the summary model has nothing to run it: install Homebrew, then run brew install llama.cpp";
+  return null;
+}

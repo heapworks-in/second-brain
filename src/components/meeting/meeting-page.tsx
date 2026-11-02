@@ -103,7 +103,18 @@ export function MeetingPage({ item: initial, event, tasks, hasSummaryModel, reco
   const polling = !finalReady && (isRecording || item.status === "processing");
   // The summary is written by a job that starts after the transcript lands, so the page keeps
   // looking a little longer, when there is a local model to write one with.
-  const summaryPending = hasSummaryModel && finalReady && !meta.summary && !meta.summaryError;
+  const summaryDue = hasSummaryModel && finalReady && !meta.summary && !meta.summaryError;
+  // True while a pass is believed to be on its way. Not simply `summaryDue`: the Summarise
+  // button sets it while that is already false, and it has to be releasable, because a pass
+  // that never arrives would otherwise leave the button disabled and the pane saying "No
+  // summary yet" with nothing to press -- which is the whole bug. React's documented
+  // adjust-state-on-change pattern, so the transcript landing still starts the watch.
+  const [summaryPending, setSummaryPending] = useState(summaryDue);
+  const [watchedDue, setWatchedDue] = useState(summaryDue);
+  if (watchedDue !== summaryDue) {
+    setWatchedDue(summaryDue);
+    setSummaryPending(summaryDue);
+  }
   // Dropped-in audio is transcribed the same way, and has no recording session of its own.
   const transcribing = !isRecording && !finalReady && item.status === "processing";
 
@@ -131,6 +142,9 @@ export function MeetingPage({ item: initial, event, tasks, hasSummaryModel, reco
     const timer = setInterval(() => {
       if (!polling && Date.now() - since > SUMMARY_WAIT_MS) {
         clearInterval(timer);
+        // A pass that failed with the same message it failed with last time changes nothing on
+        // the item, so giving up watching is the only thing that can release the button.
+        setSummaryPending(false);
         return;
       }
       void refresh();
@@ -313,6 +327,12 @@ export function MeetingPage({ item: initial, event, tasks, hasSummaryModel, reco
         summaryError={meta.summaryError}
         summaryGaps={meta.summaryGaps}
         hasSummaryModel={hasSummaryModel}
+        canSummarize={item.extractedText.trim().length > 0 || body.trim().length > 0}
+        pending={summaryPending}
+        onQueued={() => {
+          setSummaryPending(true);
+          void refresh();
+        }}
         accepted={accepted}
         home={home}
         onAccepted={(index, task) => {

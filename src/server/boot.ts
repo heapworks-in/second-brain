@@ -9,6 +9,7 @@ import { migrateNextSteps } from "@/domain/tasks/migrate-next-steps";
 import { autoStartTick } from "@/domain/meetings/auto-start";
 import { distillSweepTick, QUIET_MINUTES } from "@/domain/distill";
 import { reconcileRecordings, stopForShutdown } from "@/domain/meetings/reconcile";
+import { sweepMissingSummaries } from "@/domain/meetings/summarize";
 import { hasSummaryModel } from "@/providers/chat";
 import { syncCalendarFeed, syncOutlookWidget } from "@/domain/activity";
 import { checkOpenDatabase, recordDbCheck, getLastDbCheck } from "@/db/safety";
@@ -115,11 +116,16 @@ export function boot(): JobWorker {
   } catch (err) {
     console.error(`[boot] next-steps migration failed:`, err);
   }
+  try {
+    sweepMissingSummaries(db, (m) => console.log(`[boot] ${m}`));
+  } catch (err) {
+    console.error(`[boot] could not sweep for missing summaries:`, err);
+  }
   const embed = getEmbedProvider();
   if (!embed) console.warn("[boot] SB_EMBED=off: semantic search disabled");
   // Read once for the log line; the handlers ask again per job, so a model installed later works.
   if (!hasSummaryModel()) console.log("[boot] no local summary model: meeting summaries are off");
-  const worker = new JobWorker(db, createJobHandlers({ db, embed, hasSummaryModel }), {
+  const worker = new JobWorker(db, createJobHandlers({ db, embed }), {
     log: (m) => console.log(`[worker] ${m}`),
   });
   worker.start();

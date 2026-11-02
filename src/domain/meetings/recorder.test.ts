@@ -42,7 +42,7 @@ describe("Recorder", () => {
   let model: string;
   let recorder: Recorder;
 
-  function make(over: { whisperBin?: string | null; baseModel?: string | null; windowMs?: number } = {}): Recorder {
+  function make(over: { whisperBin?: string | null; baseModel?: string | null; windowMs?: number; stopGraceMs?: number } = {}): Recorder {
     return new Recorder({
       db: t.db,
       recorderBin: FAKE_RECORDER,
@@ -50,6 +50,7 @@ describe("Recorder", () => {
       baseModel: over.baseModel === undefined ? null : over.baseModel,
       filesDir,
       windowMs: over.windowMs,
+      stopGraceMs: over.stopGraceMs,
     });
   }
 
@@ -68,6 +69,7 @@ describe("Recorder", () => {
     delete process.env.SB_FAKE_RECORDER_STALL_MS;
     delete process.env.SB_FAKE_RECORDER_KILL_MS;
     delete process.env.SB_FAKE_RECORDER_STOP_CODE;
+    delete process.env.SB_FAKE_RECORDER_IGNORE_SIGNALS;
     delete process.env.SB_FAKE_RECORDER_SAY;
     delete process.env.SB_FAKE_RECORDER_FAIL_EARLY;
     t.cleanup();
@@ -233,6 +235,26 @@ describe("Recorder", () => {
     expect(meta(t, item.id).recording!.state).toBe("error");
     // The WAV is still on disk, so it still gets its final pass.
     expect(listJobs(t.db, { itemId: item.id }).map((j) => j.type)).toEqual(["transcribe_final"]);
+  });
+
+  /**
+   * The ladder used to stop at SIGTERM. A helper that ignores it -- wedged inside a CoreAudio
+   * call that never returns is how that happens -- left this promise unresolved for ever: the
+   * Stop request never came back, the chip stayed on "stopping", and nothing could record again
+   * until the server was restarted.
+   */
+  it("kills a helper that ignores both signals rather than waiting on it for ever", async () => {
+    process.env.SB_FAKE_RECORDER_IGNORE_SIGNALS = "1";
+    recorder = make({ stopGraceMs: 80 });
+    const item = createAdhocMeeting(t.db, new Date());
+    recorder.start(item);
+    await until(() => recorder.status().state === "recording" && fs.existsSync(path.join(filesDir, meta(t, item.id).recording!.wavPath)));
+
+    await recorder.stop();
+
+    // The session is over either way, and the audio that was written still gets its final pass.
+    await until(() => recorder.status().state === "idle" || recorder.status().state === "error");
+    await until(() => listJobs(t.db, { itemId: item.id }).some((j) => j.type === "transcribe_final"));
   });
 
   it("records a stalled stdout consumer without losing the session", async () => {

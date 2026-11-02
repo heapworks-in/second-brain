@@ -79,6 +79,8 @@ export interface RecorderDeps {
   baseModel: string | null;
   filesDir: string;
   windowMs?: number;
+  /** The SIGINT->SIGTERM->SIGKILL ladder's first rung, shortened by the test that walks it. */
+  stopGraceMs?: number;
   log?: (message: string) => void;
 }
 
@@ -182,10 +184,25 @@ export class Recorder extends EventEmitter {
         resolve();
         return;
       }
-      const timer = setTimeout(() => proc.kill("SIGTERM"), STOP_GRACE_MS);
-      timer.unref?.();
+      const grace = this.deps.stopGraceMs ?? STOP_GRACE_MS;
+      const term = setTimeout(() => proc.kill("SIGTERM"), grace);
+      // SIGTERM is the last signal `sb-recorder` handles itself. Past this it is wedged -- a
+      // CoreAudio call that never returns is the way that happens -- and the WAV on disk is as
+      // whole as it is ever going to get. There used to be no rung after SIGTERM, so a wedged
+      // helper left this promise unresolved for ever: the Stop request hung, the chip stayed on
+      // "stopping", and nothing could record again until the server was restarted. Resolving on
+      // the kill rather than on the exit event is deliberate, for the same reason: a process
+      // that ignored SIGKILL would otherwise hang the same promise all over again.
+      const hard = setTimeout(() => {
+        this.deps.log?.(`[recorder] the recorder did not stop for SIGINT or SIGTERM; killing it`);
+        proc.kill("SIGKILL");
+        resolve();
+      }, grace * 2);
+      term.unref?.();
+      hard.unref?.();
       proc.once("exit", () => {
-        clearTimeout(timer);
+        clearTimeout(term);
+        clearTimeout(hard);
         resolve();
       });
     });

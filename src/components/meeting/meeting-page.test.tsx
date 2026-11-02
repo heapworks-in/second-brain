@@ -94,7 +94,7 @@ function item(meta: Record<string, unknown>, over: Partial<ItemDTO> = {}): ItemD
 /** Answers everything the page asks for on mount, and records what it posted. A successful
  * `DELETE .../audio` flips what the next `/api/items/:id` refresh answers with, to
  * `itemAfterAudioRemoval` -- the same way the real route's write is only visible on a reload. */
-function stubFetch(over: { task?: TaskDTO; status?: RecorderStatusDTO; audioDeleteStatus?: number; itemAfterAudioRemoval?: ItemDTO } = {}) {
+function stubFetch(over: { task?: TaskDTO; status?: RecorderStatusDTO; audioDeleteStatus?: number; itemAfterAudioRemoval?: ItemDTO; summarizeStatus?: number } = {}) {
   const posts: { url: string; body: unknown }[] = [];
   let audioRemoved = false;
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -107,6 +107,10 @@ function stubFetch(over: { task?: TaskDTO; status?: RecorderStatusDTO; audioDele
     if (init?.method === "POST") {
       posts.push({ url, body: init.body ? JSON.parse(String(init.body)) : null });
       if (url.endsWith("/actions")) return Response.json({ task: over.task ?? TASK });
+      if (url.endsWith("/summarize")) {
+        const status = over.summarizeStatus ?? 200;
+        return Response.json(status < 300 ? { queued: true } : { error: "There is no transcript and no notes to summarise yet" }, { status });
+      }
       return Response.json({ ...(over.status ?? IDLE), state: "recording" });
     }
     if (url === "/api/meetings/recorder") return Response.json(over.status ?? IDLE);
@@ -284,6 +288,64 @@ describe("MeetingPage", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /**
+   * The summary is written by a background job, and the transcript job finishing used to be the
+   * only thing that could ask for one -- so a meeting that missed that moment (the model still
+   * downloading, llama-cli never installed, the job lost) had no way back, and the page said
+   * "No summary yet" for ever with nothing to press.
+   */
+  it("offers a Summarise button once there are words on the meeting, and queues a pass", async () => {
+    // A meeting the sweep found: words on it, and no pass ever offered.
+    const { fn, posts } = stubFetch();
+    mount(item({}, { extractedText: "we chose Tuesday" }), { hasSummaryModel: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Summarise" }));
+    await waitFor(() => expect(posts.some((p) => p.url === "/api/meetings/7/summarize")).toBe(true));
+    // Queued means the page starts watching for it to land, whatever the transcript job did.
+    await waitFor(() => expect(fn.mock.calls.some(([u]) => String(u) === "/api/items/7")).toBe(true));
+  });
+
+  // The pass the transcript job queues is the one that never arrived on the reporter's machine.
+  // While the page believes it is still coming the button must say so -- and once it gives up
+  // waiting the button has to come back, or there is still nothing to press.
+  it("says Summarising while the transcript's own pass is expected, and releases the button when it never lands", async () => {
+    vi.useFakeTimers();
+    try {
+      stubFetch();
+      mount(item({ final_transcript_ready: true, transcript: [] }, { extractedText: "we chose Tuesday" }), { hasSummaryModel: true });
+      expect(screen.getByRole("button", { name: "Summarising" }).hasAttribute("disabled")).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000 + 3100);
+      expect(screen.getByRole("button", { name: "Summarise" }).hasAttribute("disabled")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers it again, and shows why, when the last pass recorded a reason", () => {
+    stubFetch();
+    mount(
+      item({ final_transcript_ready: true, transcript: [], summaryError: "llama-cli is not installed" }, { extractedText: "we chose Tuesday" }),
+      { hasSummaryModel: true },
+    );
+    expect(screen.getByText(/llama-cli is not installed/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Summarise again" })).toBeTruthy();
+  });
+
+  it("does not offer it for a meeting with nothing on it yet", () => {
+    stubFetch();
+    mount(item({}, { body: "" }), { hasSummaryModel: true });
+    expect(screen.queryByRole("button", { name: /Summarise/ })).toBeNull();
+  });
+
+  it("shows the route's reason when the pass cannot be queued", async () => {
+    stubFetch({ summarizeStatus: 400 });
+    mount(item({}, { extractedText: "we chose Tuesday" }), { hasSummaryModel: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Summarise" }));
+    await waitFor(() => expect(screen.getByText("There is no transcript and no notes to summarise yet")).toBeTruthy());
   });
 
   it("offers 'Remove the audio' for a meeting whose transcript is good, and removes it", async () => {

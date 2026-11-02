@@ -3,7 +3,7 @@ import type { DB } from "@/db/client";
 import type { JobHandler } from "@/jobs/worker";
 import { jobPayload } from "@/jobs/payload";
 import { getItem, parseMeta, updateItem } from "@/domain/items";
-import { getChatProvider, type ChatProvider } from "@/providers/chat";
+import { getChatProvider, summaryUnavailable, type ChatProvider } from "@/providers/chat";
 import { ANSWER_TOKEN_RESERVE } from "@/providers/chat/llamacpp";
 import { ContextOverflowError } from "@/providers/llama-cli-output";
 import { chunkTranscript } from "@/domain/meetings/chunk";
@@ -266,8 +266,8 @@ async function summarizePiece(
 
 /**
  * The summary pass over a finished meeting: the final transcript plus whatever was typed into
- * the notes. It is the one job that is allowed to do nothing — without the local model
- * installed there is nothing to ask, and a meeting without a summary is still a meeting.
+ * the notes. Without a local model there is nothing to ask, and a meeting without a summary is
+ * still a meeting -- but the item says so, rather than looking like a summary still on its way.
  */
 export function createSummarizeMeetingHandler(deps: SummarizeMeetingDeps): JobHandler {
   const { db } = deps;
@@ -278,9 +278,21 @@ export function createSummarizeMeetingHandler(deps: SummarizeMeetingDeps): JobHa
     const item = getItem(db, itemId);
     if (!item) throw new Error(`Item ${itemId} not found`);
 
+    const fail = (message: string) => {
+      // A summary is a nicety: a failure is recorded on the item and the job is done, rather
+      // than retried three times and left red in the queue.
+      const current = getItem(db, itemId);
+      if (current) updateItem(db, itemId, { meta: { ...parseMeta<MeetingMeta>(current), summaryError: message } });
+      log(`[summarize_meeting] item ${itemId} could not be summarised: ${message}`);
+    };
+
     const provider = deps.provider !== undefined ? deps.provider : getChatProvider();
     if (!provider) {
-      log(`[summarize_meeting] no local summary model installed; item ${itemId} keeps its transcript without a summary`);
+      // This used to return silently with one log line, which is how a Mac missing llama-cli
+      // came to show "No summary yet" on every meeting for ever: the job completed, nothing was
+      // written to the item, and the only record was a line in a log nobody reads. The reason
+      // goes on the item now, where the page already renders it and the person can act on it.
+      fail(summaryUnavailable() ?? "the local summary model could not be resolved");
       return;
     }
 
@@ -298,14 +310,6 @@ export function createSummarizeMeetingHandler(deps: SummarizeMeetingDeps): JobHa
       "",
       notes ? `Notes taken during the meeting:\n${notes}` : "Notes: none were taken.",
     ].join("\n");
-
-    const fail = (message: string) => {
-      // A summary is a nicety: a failure is recorded on the item and the job is done, rather
-      // than retried three times and left red in the queue.
-      const current = getItem(db, itemId);
-      if (current) updateItem(db, itemId, { meta: { ...parseMeta<MeetingMeta>(current), summaryError: message } });
-      log(`[summarize_meeting] item ${itemId} could not be summarised: ${message}`);
-    };
 
     let summary: MeetingSummary;
     let parts: MeetingSummary[] | undefined;

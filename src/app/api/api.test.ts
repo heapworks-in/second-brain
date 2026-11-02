@@ -45,7 +45,7 @@ beforeAll(async () => {
   // instead of scanning this machine's PATH for whisper.
   const worker = new JobWorker(
     getDb(),
-    createJobHandlers({ db: getDb(), embed: createFakeEmbedProvider(), whisperBin: null, ffmpegBin: null, hasSummaryModel: () => false }),
+    createJobHandlers({ db: getDb(), embed: createFakeEmbedProvider(), whisperBin: null, ffmpegBin: null }),
   );
   drain = async () => {
     while (await worker.runOnce()) {

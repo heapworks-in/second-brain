@@ -74,7 +74,11 @@ describe("summarize_meeting handler", () => {
     expect(calls[0].system).toMatch(/summarise meeting transcripts/i);
   });
 
-  it("skips with one log line and no changes when there is no provider", async () => {
+  // Returning silently here is what made this invisible: the job completed, nothing was written
+  // to the item, and the page said "No summary yet" for ever. On a Mac without Homebrew that is
+  // permanent -- the 4.4 GB model downloads fine and there is no llama-cli to run it -- so the
+  // reason has to reach the item, which is the one place the page already reads.
+  it("records why on the item when there is no provider", async () => {
     const item = meeting();
     const logs: string[] = [];
     const handler = createSummarizeMeetingHandler({ db: t.db, provider: null, log: (m) => logs.push(m) });
@@ -83,19 +87,20 @@ describe("summarize_meeting handler", () => {
 
     const meta = parseMeta<MeetingMeta>(getItem(t.db, item.id)!);
     expect(meta.summary).toBeUndefined();
-    expect(meta.summaryError).toBeUndefined();
+    expect(meta.summaryError).toMatch(/summary model/i);
     expect(logs).toHaveLength(1);
-    expect(logs[0]).toMatch(/local summary model/i);
   });
 
-  it("skips when no local model resolves and no provider was injected", async () => {
+  it("records why when no local model resolves and no provider was injected", async () => {
     const item = meeting();
     const logs: string[] = [];
     const handler = createSummarizeMeetingHandler({ db: t.db, log: (m) => logs.push(m) });
 
     await handler(job(item.id));
 
-    expect(parseMeta<MeetingMeta>(getItem(t.db, item.id)!).summary).toBeUndefined();
+    const meta = parseMeta<MeetingMeta>(getItem(t.db, item.id)!);
+    expect(meta.summary).toBeUndefined();
+    expect(meta.summaryError).toMatch(/summary model/i);
     expect(logs).toHaveLength(1);
   });
 

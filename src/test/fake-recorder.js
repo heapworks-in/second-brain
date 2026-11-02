@@ -13,6 +13,8 @@
  *   SB_FAKE_RECORDER_STALL_MS   emit the `stdout consumer stalled` error after this many ms
  *   SB_FAKE_RECORDER_KILL_MS    kill itself with SIGKILL after this many ms (no clean exit)
  *   SB_FAKE_RECORDER_STOP_CODE  the code to exit with on SIGINT/SIGTERM (default 0: a clean stop)
+ *   SB_FAKE_RECORDER_IGNORE_SIGNALS  ignore SIGINT and SIGTERM entirely, the way a helper wedged
+ *                                    inside a CoreAudio call that never returns does
  */
 
 const fs = require("node:fs");
@@ -60,8 +62,13 @@ function finish(code) {
   }
   process.exit(code);
 }
-process.on("SIGINT", () => finish(stopCode));
-process.on("SIGTERM", () => finish(stopCode));
+if (process.env.SB_FAKE_RECORDER_IGNORE_SIGNALS) {
+  process.on("SIGINT", () => {});
+  process.on("SIGTERM", () => {});
+} else {
+  process.on("SIGINT", () => finish(stopCode));
+  process.on("SIGTERM", () => finish(stopCode));
+}
 
 // SB_FAKE_RECORDER_FAIL_EARLY: refuse before touching the WAV, the way the real helper does when
 // microphone access is denied -- a JSON error, exit 1, and no file on disk at all.
