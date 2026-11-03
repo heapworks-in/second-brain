@@ -2,7 +2,23 @@
 
 A personal capture, search, task, and meeting system that runs locally on a Mac. Stage one covers capture (notes, links, PDFs, images), background processing, and hybrid keyword plus semantic search.
 
-## Install and run
+## Install
+
+    brew tap heapworks-in/tap
+    brew trust heapworks-in/tap
+    brew install --cask second-brain
+
+Apple Silicon, macOS 12 or newer. The cask brings `node`, `llama.cpp`, `whisper-cpp` and `ffmpeg`
+with it: the app needs all four at runtime and treats each as a feature switched off when it is
+missing, so letting Homebrew put them there is the difference between a working install and one
+that quietly does less. First launch downloads about 6 GB of local models and shows the progress.
+Nothing is uploaded, then or later.
+
+The [releases page](https://github.com/heapworks-in/second-brain/releases) carries the same dmg if
+you would rather not use Homebrew. The build is ad-hoc signed, so a dmg opened by hand needs
+right-click → Open the first time; the cask clears the quarantine flag for you.
+
+## Run it from this checkout
 
     npm run setup
 
@@ -92,7 +108,8 @@ To uninstall the helper: `scripts/brain.sh stop`, then `launchctl bootout gui/$(
 
 ## Meetings and recording
 
-Recording needs two Homebrew tools and a Swift helper:
+Recording needs two Homebrew tools and a Swift helper. The cask installs the tools; a checkout
+needs them by hand:
 
     brew install whisper-cpp ffmpeg
 

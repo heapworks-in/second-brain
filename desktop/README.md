@@ -30,8 +30,9 @@ the CLI-managed install — this just owns the whole thing as one process instea
 ## Known limits (today's build)
 
 - **Node 22+ must already be on the recipient's Mac.** The bundle ships the *built* server, not a
-  Node runtime — `node server.js` still needs a real `node` on `PATH`. Bundling Node itself is a
-  reasonable next step, not done here.
+  Node runtime — `node server.js` still needs a real `node` on `PATH`. The Homebrew cask declares
+  `node` (along with `llama.cpp`, `whisper-cpp` and `ffmpeg`), so a brew install has it; a dmg
+  opened by hand does not. Bundling Node itself is a reasonable next step, not done here.
 - **Apple Silicon only.** `better-sqlite3`, `onnxruntime-node`, and the bundled `llama-cli`/model
   files are all arm64. An Intel build would need its own `npm run build` and its own Tauri
   bundle target.
@@ -136,7 +137,6 @@ above — the filename is all that's checked.
 ```sh
 cd ..                                   # repo root
 npm run build                           # produces .next/standalone/ (output: "standalone")
-cp -r public .next/standalone/
 cp -r .next/static .next/standalone/.next/
 cp scripts/brain.sh .next/standalone/scripts/brain.sh
 rm -rf .next/standalone/helper
@@ -190,6 +190,39 @@ place -- it isn't part of the server's module graph at all.
 bundle — `ensure_code_installed` in `src-tauri/src/lib.rs` is what extracts it on first run, and
 `.version` next to the extracted copy is what tells a later launch whether it needs to happen
 again after an update.
+
+## Releasing
+
+The cask is a second place the version lives, and brew users stay on the old build until it moves.
+
+```sh
+# after the build above, with the smoke test passed and the version bumped in
+# src-tauri/tauri.conf.json and src-tauri/Cargo.toml
+V=0.5.3
+DMG="desktop/src-tauri/target/release/bundle/dmg/Second Brain_${V}_aarch64.dmg"
+
+gh release create "desktop-v$V" --repo heapworks-in/second-brain --target master \
+  --title "..." --notes-file notes.md "$DMG#Second.Brain_${V}_aarch64.dmg"
+
+# bump the cask: version, sha256
+shasum -a 256 "$DMG"
+cd "$(brew --repo heapworks-in/tap)" && $EDITOR Casks/second-brain.rb
+brew style --cask Casks/second-brain.rb     # stanza order is enforced; --fix corrects it
+brew fetch --cask heapworks-in/tap/second-brain   # proves the url and the sha256
+brew livecheck --cask heapworks-in/tap/second-brain
+git commit -am "second-brain: $V" && git push
+```
+
+**Check the payload before publishing.** The release is public and ships the whole
+`.next/standalone/` tree, so anything personal that reached it is published with it:
+
+```sh
+find "desktop/src-tauri/target/release/bundle/macos/Second Brain.app/Contents/Resources/server" \
+  -name '*.json' -path '*programs*'      # expect only example.json
+```
+
+Homebrew refuses casks from a tap it does not know, so the install is three commands rather than
+two — `brew tap`, `brew trust heapworks-in/tap`, then `brew install --cask second-brain`.
 
 ## Where things live
 
