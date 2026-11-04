@@ -2,6 +2,8 @@
 
 A personal capture, search, task, and meeting system that runs locally on a Mac. Stage one covers capture (notes, links, PDFs, images), background processing, and hybrid keyword plus semantic search.
 
+**[heapworks-in.github.io/second-brain](https://heapworks-in.github.io/second-brain/)** — what it looks like, and the manual.
+
 ## Install
 
     brew tap heapworks-in/tap
