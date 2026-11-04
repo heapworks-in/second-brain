@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Documentation — Second Brain</title>
+    <meta name="description" content="How to install Second Brain, what every surface does, the keyboard shortcuts, where your data lives, and what to do when something does not appear." />
+    <meta name="theme-color" content="#0b0b0f" />
+    <link rel="icon" href="icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap">
+        <a class="mark" href="./"><span class="dot"></span>Second brain</a>
+        <nav>
+          <a href="./">Overview</a>
+          <a href="docs.html" aria-current="page">Docs</a>
+          <a href="https://github.com/heapworks-in/second-brain">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap docs">
+      <aside class="toc">
+        <span class="micro">Contents</span>
+        <ol>
+          <li><a href="#install">Install</a></li>
+          <li><a href="#first-run">First launch</a></li>
+          <li><a href="#permissions">Permissions</a></li>
+          <li><a href="#capture">Capture</a></li>
+          <li><a href="#inbox">The Inbox</a></li>
+          <li><a href="#organise">Projects, Areas, Resources</a></li>
+          <li><a href="#planner">Planner and Focus</a></li>
+          <li><a href="#meetings">Meetings</a></li>
+          <li><a href="#search">Search</a></li>
+          <li><a href="#activity">Activity</a></li>
+          <li><a href="#goals">Goals</a></li>
+          <li><a href="#review">Weekly review</a></li>
+          <li><a href="#log">The log</a></li>
+          <li><a href="#distill">Distill</a></li>
+          <li><a href="#keys">Keyboard</a></li>
+          <li><a href="#data">Your data</a></li>
+          <li><a href="#trouble">Troubleshooting</a></li>
+          <li><a href="#source">From source</a></li>
+        </ol>
+      </aside>
+
+      <div class="doc-body">
+        <section id="install">
+          <span class="micro">01</span>
+          <h2>Install</h2>
+          <p>Apple Silicon, macOS 12 (Monterey) or newer. The Homebrew cask is the recommended way in:</p>
+          <pre><code>brew tap heapworks-in/tap
+brew trust heapworks-in/tap
+brew install --cask second-brain</code></pre>
+          <p>
+            The middle line is Homebrew asking before it loads a cask from a tap it does not know. The cask then installs the
+            four things the app looks for at runtime:
+          </p>
+          <table>
+            <tr>
+              <th>Dependency</th>
+              <th>What stops working without it</th>
+            </tr>
+            <tr>
+              <td><code>node</code></td>
+              <td>Everything — the app ships a built server, not a Node runtime.</td>
+            </tr>
+            <tr>
+              <td><code>whisper-cpp</code></td>
+              <td>Transcription, live and final.</td>
+            </tr>
+            <tr>
+              <td><code>llama.cpp</code></td>
+              <td>Meeting summaries and note distillation.</td>
+            </tr>
+            <tr>
+              <td><code>ffmpeg</code></td>
+              <td>Transcribing audio you dropped in rather than recorded.</td>
+            </tr>
+          </table>
+          <p>
+            Each of those is a feature switched off when it is missing, not a crash — which is exactly how an install without
+            <code>llama.cpp</code> can look fine and never produce a single summary. Installing through Homebrew is what makes
+            that impossible.
+          </p>
+          <p>
+            The <a href="https://github.com/heapworks-in/second-brain/releases/latest">dmg on the releases page</a> is the same
+            build. The app is ad-hoc signed, so opening it by hand needs right-click → Open the first time; the cask clears the
+            quarantine flag for you.
+          </p>
+        </section>
+
+        <section id="first-run">
+          <span class="micro">02</span>
+          <h2>First launch</h2>
+          <p>Opening the app the first time does four things, with the progress on screen rather than behind a spinner:</p>
+          <ol class="steps">
+            <li>Unpacks the bundled server into <code>~/Library/Application Support/com.second-brain.desktop/</code>.</li>
+            <li>Downloads the models — about 6 GB in total, resumable, and never fetched again.</li>
+            <li>Builds the two Swift helpers (the activity watcher and the recorder) from the bundled source.</li>
+            <li>Starts the server and opens the window on <code>localhost:3141</code>.</li>
+          </ol>
+          <table>
+            <tr>
+              <th>Model</th>
+              <th>Size</th>
+              <th>Used for</th>
+            </tr>
+            <tr><td>whisper base.en</td><td>~150 MB</td><td>The live transcript during a meeting</td></tr>
+            <tr><td>whisper large-v3-turbo</td><td>~1.6 GB</td><td>The final, accurate pass afterwards</td></tr>
+            <tr><td>Qwen2.5-7B-Instruct Q4_K_M</td><td>~4.4 GB</td><td>Meeting summaries</td></tr>
+            <tr><td>Qwen2.5-0.5B-Instruct Q4_K_M</td><td>~400 MB</td><td>Note distillation</td></tr>
+            <tr><td>all-MiniLM embeddings</td><td>~35 MB</td><td>Semantic search</td></tr>
+          </table>
+          <p>
+            Closing the window hides it; the app keeps running in the menu bar so recording and activity tracking carry on. Quit
+            from the tray to stop everything.
+          </p>
+          <div class="note">
+            <span class="micro">While the models download</span>
+            <p>
+              The app is usable immediately — capture, search and planning do not wait for any of it. A meeting recorded before
+              the summary model has landed is not lost: the app sweeps for meetings that never got a pass and queues them when it
+              next starts.
+            </p>
+          </div>
+        </section>
+
+        <section id="permissions">
+          <span class="micro">03</span>
+          <h2>Permissions</h2>
+          <p>macOS asks the first time each is needed. All of them are refusable, and refusing one only switches off what it covers.</p>
+          <table>
+            <tr><th>Permission</th><th>Why</th></tr>
+            <tr><td>Microphone</td><td>Recording your side of a meeting.</td></tr>
+            <tr>
+              <td>System Audio Recording</td>
+              <td>macOS 14.2+. The other side of the call. Refuse it and recording still works, microphone only.</td>
+            </tr>
+            <tr><td>Calendar</td><td>Knowing a meeting is starting, so it can record itself.</td></tr>
+            <tr><td>Accessibility</td><td>The activity helper reading which window is in front. Never prompted for — grant it in System Settings.</td></tr>
+          </table>
+          <p>
+            To check what the recorder can actually reach, ask it:
+          </p>
+          <pre><code>"$HOME/Library/Application Support/second-brain/bin/sb-recorder" --probe</code></pre>
+          <div class="note">
+            <span class="micro">A grant that looks on but is not</span>
+            <p>
+              The helpers are ad-hoc signed, so a permission is bound to that exact binary. Updating the app silently voids
+              whatever the previous build was granted, and the stale entry still appears switched on in System Settings. Remove it
+              with the <strong>−</strong> button and let it ask again, rather than toggling it off and on.
+            </p>
+          </div>
+        </section>
+
+        <section id="capture">
+          <span class="micro">04</span>
+          <h2>Capture</h2>
+          <p>
+            Press <kbd>c</kbd> anywhere for the capture bar, or <kbd>g</kbd> <kbd>c</kbd> for the full page. It takes a typed
+            note, a pasted link, or a dropped file — PDFs are read, images go through OCR, links are fetched and kept as text so
+            they stay searchable after the page changes.
+          </p>
+          <p>
+            Nothing asks where it belongs. Everything lands in the Inbox unfiled, which is the only way capture stays fast enough
+            to actually use. Mention <code>@someone</code> in a note and it is linked to that person.
+          </p>
+        </section>
+
+        <section id="inbox">
+          <span class="micro">05</span>
+          <h2>The Inbox</h2>
+          <p>
+            Processing is one decision per item, and the keyboard does all of it: <kbd>p</kbd> files to a project,
+            <kbd>a</kbd> to an area, <kbd>r</kbd> to a resource, <kbd>e</kbd> archives, <kbd>x</kbd> deletes, <kbd>j</kbd> and
+            <kbd>k</kbd> move between items, <kbd>l</kbd> switches to the list view.
+          </p>
+          <figure class="shot" style="margin-top: 20px">
+            <img loading="lazy" decoding="async" src="shots/review.png" alt="The weekly review's first step: one inbox item at a time with filing buttons, and the tasks left over from the week with carry or drop." width="2000" height="1389" />
+            <figcaption>The same triage, inside the weekly review.</figcaption>
+          </figure>
+        </section>
+
+        <section id="organise">
+          <span class="micro">06</span>
+          <h2>Projects, Areas, Resources</h2>
+          <p>Everything you keep lives in exactly one of four places, split by what it is <em>for</em> rather than what it is:</p>
+          <ul>
+            <li><strong>Projects</strong> have an end — something you are working toward finishing, with a deadline.</li>
+            <li><strong>Areas</strong> do not end — a standard you maintain for as long as it matters.</li>
+            <li><strong>Resources</strong> are reference: notes and links you are keeping for later, not acting on now.</li>
+            <li><strong>Archive</strong> holds closed projects and dead areas. Out of the way, never deleted.</li>
+          </ul>
+          <p>
+            <strong>Library</strong> is the catalogue of everything regardless of where it is filed, with filters for type,
+            status, tag, date and home. Completing a project asks where its leftovers should go.
+          </p>
+        </section>
+
+        <section id="planner">
+          <span class="micro">07</span>
+          <h2>Planner and Focus</h2>
+          <p>
+            Day and Week views for time-blocking. Drag a task onto the timeline to give it a slot, or press
+            <strong>Fill the day</strong> to have open tasks placed into whatever is genuinely free — meetings included.
+          </p>
+          <p>The capacity line across the top is the honest part:</p>
+          <ul>
+            <li><strong>planned</strong> — the estimates of what is on today.</li>
+            <li><strong>at your pace</strong> — those estimates multiplied by how your last thirty finished tasks actually ran. It appears once eight of them carry both an estimate and a timed run.</li>
+            <li><strong>blocked</strong> — time already spoken for by meetings you said you are going to.</li>
+            <li><strong>unplaced</strong> — planned work with nowhere on the timeline to be.</li>
+          </ul>
+          <p>
+            A <strong>Focus run</strong> (<kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>F</kbd>) times one sitting on one task. There is no timer
+            on the server — a live run is simply a row with no end — so closing the window or reloading loses nothing. What it
+            records is what teaches the pace figure.
+          </p>
+          <figure class="shot" style="margin-top: 20px">
+            <img loading="lazy" decoding="async" src="shots/week.png" alt="The planner's week view: five days of blocks and meetings side by side." width="2000" height="1250" />
+            <figcaption>The week view: the same blocks, five days at a time.</figcaption>
+          </figure>
+        </section>
+
+        <section id="meetings">
+          <span class="micro">08</span>
+          <h2>Meetings</h2>
+          <h3>Recording</h3>
+          <p>
+            A meeting records itself when it starts, if the invite carries a <em>real</em> call link — Zoom, Teams, Meet or
+            Webex. A link to an agenda doc or a Jira ticket does not count, which is deliberate: the <strong>Join</strong> button
+            still opens whatever link is there, but only a recognised provider arms the recorder. <strong>Record now</strong>
+            records whatever is in front of you, invite or no invite.
+          </p>
+          <p>
+            Audio is 16 kHz mono WAV under your data directory, kept for a retention window and then released; the transcript and
+            summary stay.
+          </p>
+          <h3>Going, maybe, not going</h3>
+          <p>
+            Each meeting carries a local decision. It changes whether the meeting blocks your calendar and counts against the
+            day's capacity, and <em>maybe</em> counts half. This never leaves the Mac — the organiser is not told, and the
+            calendar server never sees it.
+          </p>
+          <h3>Transcript and summary</h3>
+          <p>
+            Two passes: a small model live while the meeting runs, then the accurate one afterwards, which replaces it. Every
+            line is stamped with the time of day it was said. The summary that follows is a paragraph, the decisions, and the
+            proposed actions — each with <strong>Add as task</strong> beside it.
+          </p>
+          <p>
+            Nothing stops you asking for it again. <strong>Summarise</strong> appears on any meeting with a transcript or notes,
+            and re-running it is safe: a pass already queued is not duplicated.
+          </p>
+          <h3>Audit</h3>
+          <p>
+            <strong>Meetings → Audit</strong> shows what a recurring series has cost over ninety days: occurrences, hours,
+            attendance, and what came out of it. Deliberately with no score and no ranking — the numbers are the argument.
+          </p>
+          <figure class="shot tall" style="margin-top: 20px">
+            <img loading="lazy" decoding="async" src="shots/audit.png" alt="The meeting audit: each recurring series with its occurrences, hours and attendance over ninety days." width="2000" height="1527" />
+          </figure>
+        </section>
+
+        <section id="search">
+          <span class="micro">09</span>
+          <h2>Search</h2>
+          <p>
+            <kbd>/</kbd> from anywhere, or <kbd>g</kbd> <kbd>s</kbd>. Every query runs twice: full-text over the exact words, and
+            a vector search over meaning, merged into one ranking. Filter by type, tag, date range or home, and include the
+            archive when you need to.
+          </p>
+          <p>
+            Transcripts are searched like anything else, so a half-remembered sentence from a call three weeks ago is a search,
+            not an archaeology project.
+          </p>
+        </section>
+
+        <section id="activity">
+          <span class="micro">10</span>
+          <h2>Activity</h2>
+          <p>
+            The helper records the frontmost app, window title and — for browsers — the domain, in sessions. Rules sort those into
+            categories, in order, first match wins; exclusions drop apps or domains you would rather it never recorded at all.
+            Pause it whenever you like.
+          </p>
+          <p>
+            The day view shows a coloured strip of the whole day, time by category, by app and by window, and which meetings you
+            were in and for how long. The week view is the same arithmetic over seven days. Sessions older than the retention
+            window (90 days by default) are dropped.
+          </p>
+        </section>
+
+        <section id="goals">
+          <span class="micro">11</span>
+          <h2>Goals</h2>
+          <p>
+            A goal is an outcome with a date, for the quarter or the year. Link the projects and areas that serve it and progress
+            is computed from the tasks actually finished inside them — there is no percentage field, because a hand-typed number
+            is the first thing to go stale. A goal nothing has moved in a while is marked stalled.
+          </p>
+          <figure class="shot tall" style="margin-top: 20px">
+            <img loading="lazy" decoding="async" src="shots/goals.png" alt="Goals with their linked projects and computed progress." width="2000" height="1250" />
+          </figure>
+        </section>
+
+        <section id="review">
+          <span class="micro">12</span>
+          <h2>Weekly review</h2>
+          <p>Four steps, in order, each saved as you go:</p>
+          <ol class="steps">
+            <li><strong>Clear the decks</strong> — the inbox, one item at a time, and every task left over from the week to carry or drop.</li>
+            <li><strong>Look back</strong> — what finished, and what it cost.</li>
+            <li><strong>Goals</strong> — whether the week moved any of them.</li>
+            <li><strong>Look ahead</strong> — what next week is actually for.</li>
+          </ol>
+          <p>The finished review is saved as an item, so it is searchable alongside everything else.</p>
+        </section>
+
+        <section id="log">
+          <span class="micro">13</span>
+          <h2>The log</h2>
+          <p>
+            The one thing a second brain cannot reconstruct afterwards is what you thought was going to happen. The log keeps
+            three shapes of call, each with a date it resolves:
+          </p>
+          <ul>
+            <li><strong>Estimate</strong> — two ranges, the 50% you think likely and the 90% you would be surprised to land outside. Scored on whether the actual fell inside.</li>
+            <li><strong>Risk</strong> — a stated probability and a yes/no outcome, scored by Brier.</li>
+            <li><strong>Call</strong> — a bare claim, scored right or wrong.</li>
+          </ul>
+          <p>The header keeps the running totals: how often you land in range, and how often you are simply right.</p>
+        </section>
+
+        <section id="distill">
+          <span class="micro">14</span>
+          <h2>Distill</h2>
+          <p>
+            Once a note, link or file has gone quiet for a while, a small local model reduces it to a gist and a handful of
+            quotes taken verbatim from what you wrote — never invented, never paraphrased into something you did not say. You
+            choose <strong>Keep</strong> or <strong>Not useful</strong>; either way the original is untouched. Everything kept is
+            under Library's Distilled filter.
+          </p>
+        </section>
+
+        <section id="keys">
+          <span class="micro">15</span>
+          <h2>Keyboard</h2>
+          <table>
+            <tr><th>Keys</th><th>Does</th></tr>
+            <tr><td><kbd>⌘</kbd> <kbd>K</kbd></td><td>Command palette — every page and action, searchable by name</td></tr>
+            <tr><td><kbd>/</kbd></td><td>Jump into the search box from anywhere</td></tr>
+            <tr><td><kbd>c</kbd></td><td>Capture bar, without leaving the page</td></tr>
+            <tr><td><kbd>⌘</kbd> <kbd>↵</kbd></td><td>Capture</td></tr>
+            <tr><td><kbd>⌘</kbd> <kbd>S</kbd></td><td>Save the item, container or person</td></tr>
+            <tr><td><kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>F</kbd></td><td>Start, switch or stop a focus run on the task under the keyboard</td></tr>
+            <tr><td><kbd>⌘</kbd> <kbd>.</kbd></td><td>Take the action the newest toast offers (<kbd>Esc</kbd> dismisses)</td></tr>
+            <tr><td><kbd>?</kbd></td><td>The in-app help page</td></tr>
+          </table>
+          <p>
+            Navigation is a chord: press <kbd>g</kbd>, then the letter, within about a second. <kbd>h</kbd> home,
+            <kbd>d</kbd> planner, <kbd>g</kbd> goals, <kbd>w</kbd> weekly review, <kbd>i</kbd> inbox, <kbd>p</kbd> projects,
+            <kbd>a</kbd> areas, <kbd>r</kbd> resources, <kbd>e</kbd> people, <kbd>t</kbd> activity, <kbd>l</kbd> library,
+            <kbd>x</kbd> archive, <kbd>s</kbd> search, <kbd>c</kbd> capture. None of them fire while you are typing in a field.
+          </p>
+        </section>
+
+        <section id="data">
+          <span class="micro">16</span>
+          <h2>Your data</h2>
+          <p>Everything lives in one directory:</p>
+          <pre><code>~/Library/Application Support/second-brain/
+  brain.db          the database — items, tasks, meetings, activity
+  files/            attachments, PDFs, images, meeting audio
+  models/           the downloaded models
+  backups/          nightly, verified, kept on a rolling window
+  bin/              the two Swift helpers</code></pre>
+          <p>
+            Backing it up is copying that folder. Moving it to another disk is <code>SB_DATA_DIR</code>. The nightly backup runs
+            an integrity check on the copy it makes, so a corrupted database is noticed rather than quietly backed up.
+          </p>
+          <p>Removing the app, and everything it ever held:</p>
+          <pre><code>brew uninstall --zap --cask second-brain</code></pre>
+          <div class="note">
+            <span class="micro">Careful</span>
+            <p><code>--zap</code> deletes the data directory. Without it, uninstalling leaves your database exactly where it was.</p>
+          </div>
+        </section>
+
+        <section id="trouble">
+          <span class="micro">17</span>
+          <h2>Troubleshooting</h2>
+          <h3>A meeting says "No summary yet" and never changes</h3>
+          <p>
+            The summary model and the binary that runs it install separately, and <code>llama-cli</code> is the one that goes
+            missing. The meeting page now says so outright instead of staying blank. Fix it and ask again:
+          </p>
+          <pre><code>brew install llama.cpp</code></pre>
+          <p>Then open the meeting and press <strong>Summarise</strong>.</p>
+
+          <h3>A recording produced no transcript</h3>
+          <p>
+            Check <code>whisper-cpp</code> is installed and the models arrived — the status line in the app reports
+            <code>whisper:</code> and <code>ffmpeg:</code> and where they resolved to. Audio dropped in from elsewhere needs
+            <code>ffmpeg</code> to convert it first.
+          </p>
+
+          <h3>Recording never starts</h3>
+          <p>
+            Run the recorder's probe (under <a href="#permissions">Permissions</a>). If it reports the microphone as denied while
+            System Settings shows it granted, the grant belongs to an older build of the helper — remove the entry and let it ask
+            again.
+          </p>
+
+          <h3>The app says a server is already running</h3>
+          <p>
+            Port 3141 is in use, usually by a command-line install of the same app. Stop it with
+            <code>scripts/brain.sh stop</code> and reopen the app so that it owns the server — permission prompts belong to
+            whichever process started it.
+          </p>
+
+          <h3>A model download keeps failing</h3>
+          <p>
+            Downloads resume from where they stopped, so re-opening the app is the first thing to try. Everything that depends on
+            a missing model is switched off rather than broken, so the rest of the app keeps working meanwhile.
+          </p>
+        </section>
+
+        <section id="source">
+          <span class="micro">18</span>
+          <h2>Running from source</h2>
+          <p>The desktop app is a Tauri shell around the same Next.js app, the same SQLite database and the same scripts.</p>
+          <pre><code>git clone https://github.com/heapworks-in/second-brain
+cd second-brain
+npm run setup      # dependencies, build, models, launch agent on :3141</code></pre>
+          <table>
+            <tr><th>Command</th><th>Does</th></tr>
+            <tr><td><code>npm run status</code></td><td>Agent, server, tool and helper state</td></tr>
+            <tr><td><code>npm run update</code></td><td>After pulling: dependencies, builds, models, restart</td></tr>
+            <tr><td><code>npm run restart</code></td><td>Restart; <code>-- --build</code> rebuilds, <code>-- --helpers</code> rebuilds the Swift helpers</td></tr>
+            <tr><td><code>npm run stop</code></td><td>Stop the agent and the activity helper</td></tr>
+            <tr><td><code>npm run logs</code></td><td>Tail the server log</td></tr>
+            <tr><td><code>npm test</code></td><td>The test suite</td></tr>
+          </table>
+          <p>
+            A source checkout needs <code>brew install whisper-cpp ffmpeg llama.cpp</code> itself — that is what the cask is for.
+            <code>SB_DATA_DIR</code> moves the data directory; <code>SB_EMBED=off</code> runs keyword-only search.
+          </p>
+        </section>
+      </div>
+    </main>
+
+    <footer class="site">
+      <div class="wrap">
+        <span>Second Brain — a <a href="https://github.com/heapworks-in">heapworks</a> project. MIT.</span>
+        <nav>
+          <a href="./">Overview</a>
+          <a href="https://github.com/heapworks-in/second-brain">Source</a>
+          <a href="https://github.com/heapworks-in/second-brain/releases">Releases</a>
+          <a href="https://github.com/heapworks-in/second-brain/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

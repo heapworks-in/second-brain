@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Second Brain — a second brain that never leaves your Mac</title>
+    <meta
+      name="description"
+      content="Capture, search, planning and a meeting recorder that transcribes and summarises on your own Mac. No account, no server, nothing uploaded."
+    />
+    <meta property="og:title" content="Second Brain" />
+    <meta
+      property="og:description"
+      content="Capture, search, planning and a meeting recorder that transcribes and summarises on your own Mac. No account, no server, nothing uploaded."
+    />
+    <meta property="og:image" content="shots/home.png" />
+    <meta name="theme-color" content="#0b0b0f" />
+    <link rel="icon" href="icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap">
+        <a class="mark" href="./"><span class="dot"></span>Second brain</a>
+        <nav>
+          <a href="#meetings">Meetings</a>
+          <a href="#planner">Planner</a>
+          <a href="#private">Private</a>
+          <a href="docs.html">Docs</a>
+          <a href="https://github.com/heapworks-in/second-brain">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="wrap">
+          <h1>Your meetings, notes and days, kept on one Mac.</h1>
+          <p class="lede">
+            Second Brain records a meeting, transcribes it, and writes down what was decided and who is holding what — then puts
+            the plan for tomorrow next to the hours you actually have. Every model runs on your machine. Nothing is uploaded,
+            because there is nowhere for it to go.
+          </p>
+
+          <div class="install">
+            <code class="cmd"><span class="prompt">$ </span>brew install --cask heapworks-in/tap/second-brain</code>
+            <a class="btn" href="https://github.com/heapworks-in/second-brain/releases/latest">Download the dmg</a>
+            <a class="btn ghost" href="docs.html">Read the docs</a>
+          </div>
+          <p class="footnote">Apple Silicon · macOS 12 or newer · 6 GB of local models on first launch</p>
+
+          <!-- The one piece of motion on the page: a meeting arriving as a transcript, and leaving
+               as something you can act on. Real text from the demo database. -->
+          <div class="demo" id="demo">
+            <div class="pane">
+              <header>
+                <span class="micro">Transcript</span>
+                <span class="rec"><span class="pip"></span>Listening</span>
+                <button class="replay" id="replay" type="button">Replay</button>
+              </header>
+              <div class="body">
+                <ol id="lines">
+                  <li><span class="t">11:00:07</span><span>It finished. Eleven hours for the whole of orders, which is two hours slower than the staging run, but it finished clean.</span></li>
+                  <li><span class="t">11:00:16</span><span>Two hours slower on the same hardware? That's the index build on order_items, I'd bet.</span></li>
+                  <li><span class="t">11:00:34</span><span>So the window is twelve hours, not ten. That rules out doing it on a weeknight.</span></li>
+                  <li><span class="t">11:00:42</span><span>Saturday then. If we start at eight in the evening we're done before anyone opens a laptop on Sunday.</span></li>
+                  <li><span class="t">11:01:01</span><span>I'd rather we kept dual writes on for the first week. It means a rollback is a config change instead of a restore.</span></li>
+                  <li><span class="t">11:01:13</span><span>Four milliseconds on p50 or p99? Because those are very different conversations.</span></li>
+                  <li><span class="t">11:01:20</span><span>p99. p50 barely moves. I measured it on staging on Tuesday with production-shaped traffic.</span></li>
+                  <li><span class="t">11:02:05</span><span>I'll write the runbook this week. Marcus, can you do the pager rota for that night?</span></li>
+                </ol>
+              </div>
+            </div>
+
+            <div class="pane summary-card" id="summary">
+              <header><span class="micro">Summary</span></header>
+              <div class="body">
+                <p>
+                  The team walked through the Postgres cutover now that the overnight backfill has completed. It took eleven hours,
+                  two longer than the staging run, with roughly ninety minutes spent building the index on order_items — which pushes
+                  the window past what a weeknight allows.
+                </p>
+                <span class="micro">Decisions</span>
+                <ul>
+                  <li>Cutover runs Saturday the 21st at 20:00 — a twelve-hour window.</li>
+                  <li>Dual writes stay on for a week, at 4–5 ms on write p99.</li>
+                  <li>Date chosen to leave clear air before the monthly invoice run.</li>
+                </ul>
+                <span class="micro">Proposed actions</span>
+                <div class="action">
+                  <span class="tick">✓</span><span>Write the cutover runbook</span><span class="added">Added · Postgres migration</span>
+                </div>
+                <div class="action">
+                  <span class="tick">✓</span><span>Set the pager rota for cutover night</span><span class="added">Added · Postgres migration</span>
+                </div>
+                <div class="action"><span class="tick" style="color: var(--fg-faint)">+</span><span>Brief support on the window</span><span class="added">Add as task</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="wrap">
+          <figure class="full">
+            <img src="shots/home.png" alt="The Second Brain home screen: today's date, what is planned, meetings, projects in motion and recent captures." width="2000" height="1250" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="band" id="meetings">
+        <div class="wrap">
+          <div class="feature">
+            <div>
+              <span class="micro">Meetings</span>
+              <h2>A meeting that writes itself down.</h2>
+              <p>
+                It starts recording when a real call starts — a Zoom, Teams, Meet or Webex link on the invite, never an agenda
+                doc that happens to be a URL. The live transcript appears while people are still talking. When the call ends, a
+                7B model on your Mac reads the whole thing and writes a paragraph, the decisions, and the work somebody left
+                holding.
+              </p>
+              <p>
+                Every line says the time of day it was said, so the transcript can be read back against your own memory of the
+                room. Each proposed action has an <strong>Add as task</strong> next to it: accept it and the task is born in the
+                project the meeting belongs to, remembering where it came from.
+              </p>
+            </div>
+            <figure class="shot">
+              <img loading="lazy" decoding="async" src="shots/meeting.png" alt="A meeting page: typed notes on the left, a timestamped transcript on the right." width="2000" height="1597" />
+              <figcaption>What it heard — every line stamped with the time of day it was said.</figcaption>
+            </figure>
+          </div>
+          <figure class="full" style="margin-top: 36px">
+            <img loading="lazy" decoding="async" src="shots/meeting-summary.png" alt="The summary the local model wrote: a paragraph, four decisions, and four proposed actions, two of them already turned into tasks." width="1900" height="1090" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="band" id="planner">
+        <div class="wrap">
+          <div class="feature flip">
+            <div>
+              <span class="micro">Planner</span>
+              <h2>Planned against the day you actually have.</h2>
+              <p>
+                Drag a task onto the timeline, or let <strong>Fill the day</strong> drop your open work into whatever is still
+                free. The line at the top counts real minutes: what meetings have already taken, what is blocked, what is still
+                unplaced.
+              </p>
+              <p>
+                It also counts something a calendar cannot. Every finished task that was estimated and timed teaches it how your
+                estimates run, so a plan of four and a half hours is quietly labelled <em>about 4h 53m at your pace</em> — the
+                median of your last thirty, not a number you typed.
+              </p>
+            </div>
+            <figure class="shot">
+              <img loading="lazy" decoding="async" src="shots/planner.png" alt="The planner: a day timeline with meetings and task blocks, a live focus timer, and today's plan with estimates." width="2000" height="1250" />
+              <figcaption>A focus run in progress, meetings on the timeline, and the capacity line keeping score.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="search">
+        <div class="wrap">
+          <div class="feature">
+            <div>
+              <span class="micro">Search</span>
+              <h2>Find it by what you meant.</h2>
+              <p>
+                Keyword and meaning at once: SQLite full-text over every word, and a local embedding model over every chunk, so
+                a search for <em>rollback</em> finds the note that says it and the meeting where somebody worried about it.
+                Transcripts, PDFs, images that went through OCR and your own notes are all the same kind of thing here.
+              </p>
+            </div>
+            <figure class="shot tall">
+              <img loading="lazy" decoding="async" src="shots/search.png" alt="Search results for 'rollback' across notes, a meeting transcript and a PDF, with matches highlighted." width="2000" height="1250" />
+              <figcaption>One query, four kinds of material, matches shown in place.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="activity">
+        <div class="wrap">
+          <div class="feature flip">
+            <div>
+              <span class="micro">Activity</span>
+              <h2>Where the day actually went.</h2>
+              <p>
+                A small helper notes which window is in front and for how long, sorts it into categories by rules you can edit,
+                and nothing leaves the machine. At the end of the day you get the honest version of it: two hours of coding, an
+                hour in calls, and the twenty-six minutes of browsing you would not have guessed.
+              </p>
+              <p>It also knows which of those minutes were inside a meeting, which is how a recurring call gets costed properly.</p>
+            </div>
+            <figure class="shot tall">
+              <img loading="lazy" decoding="async" src="shots/activity.png" alt="The activity page: a coloured timeline of the day, time by category, by app and by window, and the meetings attended." width="2000" height="1527" />
+              <figcaption>By category, by app, by window — and which meetings you were actually in.</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="wrap">
+          <span class="micro">The slower loops</span>
+          <h2>Everything else the week needs.</h2>
+          <div class="grid-3">
+            <div class="card">
+              <h3>Capture and file</h3>
+              <p>
+                A note, a link or a dropped file lands in the Inbox unfiled. Processing it means one decision: a Project with an
+                end, an Area you maintain, or a Resource you are keeping. Nothing is ever deleted by filing it.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Goals that cannot lie</h3>
+              <p>
+                Link the projects that serve a goal and its progress is computed from the work that is actually done. There is no
+                field to type a percentage into, which is the point.
+              </p>
+            </div>
+            <div class="card">
+              <h3>The weekly review</h3>
+              <p>
+                Four steps: clear the inbox, look back at what finished, check the goals, look ahead. What carried over and what
+                you dropped are both recorded, and the answers are searchable afterwards.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Calls before the answer</h3>
+              <p>
+                Write down the estimate, the risk or the guess, with a date it resolves. The log scores you later: how often the
+                truth landed inside your range, and how often you were simply right.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Distill</h3>
+              <p>
+                Once a note has gone quiet, a small local model boils it down to a gist and a few quotes pulled verbatim from what
+                you wrote — never invented, never paraphrased. Keep it or bin it; the original is untouched.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Meeting audit</h3>
+              <p>
+                What a recurring series has really cost over ninety days: occurrences, hours, attendance and what came out of it.
+                Plain facts, with no score and no ranking.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="private">
+        <div class="wrap">
+          <span class="micro">Private by construction</span>
+          <h2>There is no server. That is the whole design.</h2>
+          <p class="lede">
+            Transcription is whisper.cpp on your Mac. Summaries are Qwen2.5-7B on your Mac. Search embeddings are computed on your
+            Mac. The database is one SQLite file in your own Library folder, and the app works with the Wi-Fi switched off.
+          </p>
+          <div class="facts">
+            <div><span class="n">0</span><span class="l">accounts to create</span></div>
+            <div><span class="n">0</span><span class="l">bytes uploaded</span></div>
+            <div><span class="n">0</span><span class="l">per month, forever</span></div>
+            <div><span class="n">1</span><span class="l">file holding all of it</span></div>
+          </div>
+          <p style="margin-top: 28px">
+            The models are downloaded once on first launch, from Hugging Face, and never again. After that the only network
+            traffic the app makes is fetching a link you pasted and reading a calendar feed you configured. Your data directory is
+            yours: <code>~/Library/Application&nbsp;Support/second-brain</code>, backed up nightly, exportable by copying a folder.
+          </p>
+        </div>
+      </section>
+
+      <section class="band">
+        <div class="wrap narrow">
+          <span class="micro">Install</span>
+          <h2>Two commands and a long download.</h2>
+          <p>
+            Homebrew brings the four things the app needs at runtime — <code>node</code>, <code>llama.cpp</code>,
+            <code>whisper-cpp</code> and <code>ffmpeg</code> — which is why it is the recommended way in. Install the dmg by hand
+            and you are responsible for those yourself.
+          </p>
+          <pre><code>brew tap heapworks-in/tap
+brew trust heapworks-in/tap
+brew install --cask second-brain</code></pre>
+          <p>
+            First launch unpacks the server, downloads about 6 GB of models with a progress bar, builds the two Swift helpers, and
+            opens on <code>localhost:3141</code>. It lives in the menu bar after that. The
+            <a href="docs.html">documentation</a> covers permissions, every surface in the app, and what to do when a transcript or
+            a summary does not appear.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site">
+      <div class="wrap">
+        <span>Second Brain — a <a href="https://github.com/heapworks-in">heapworks</a> project. MIT.</span>
+        <nav>
+          <a href="docs.html">Docs</a>
+          <a href="https://github.com/heapworks-in/second-brain">Source</a>
+          <a href="https://github.com/heapworks-in/second-brain/releases">Releases</a>
+          <a href="https://github.com/heapworks-in/second-brain/issues">Issues</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script>
+      // The transcript fills in, then the summary arrives: the one thing on this page that moves,
+      // because it is the one thing that is hard to describe in a still image.
+      (function () {
+        const lines = Array.from(document.querySelectorAll("#lines li"));
+        const summary = document.getElementById("summary");
+        const replay = document.getElementById("replay");
+        const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        let timers = [];
+
+        function show(all) {
+          timers.forEach(clearTimeout);
+          timers = [];
+          if (all) {
+            lines.forEach((l) => l.classList.add("in"));
+            summary.classList.add("in");
+            return;
+          }
+          lines.forEach((l) => l.classList.remove("in"));
+          summary.classList.remove("in");
+          lines.forEach((line, i) => timers.push(setTimeout(() => line.classList.add("in"), 260 * i + 150)));
+          timers.push(setTimeout(() => summary.classList.add("in"), 260 * lines.length + 500));
+        }
+
+        if (still) {
+          show(true);
+          replay.hidden = true;
+          return;
+        }
+
+        replay.addEventListener("click", () => show(false));
+
+        // Only play once it is actually on screen, so a visitor who lands mid-page still sees it.
+        const io = new IntersectionObserver(
+          (entries) => {
+            if (entries.some((e) => e.isIntersecting)) {
+              show(false);
+              io.disconnect();
+            }
+          },
+          { threshold: 0.25 },
+        );
+        io.observe(document.getElementById("demo"));
+      })();
+    </script>
+  </body>
+</html>
