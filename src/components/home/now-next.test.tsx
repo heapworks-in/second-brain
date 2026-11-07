@@ -7,7 +7,7 @@ import type { FocusRunDTO, FocusSettingsDTO, HomeDTO, HomeItemDTO, PlannerDayDTO
 
 const DATE = "2026-09-22";
 const NO_FOCUS: HomeDTO["focus"] = { minutes: 0, running: null };
-const FOCUS_SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4 };
+const FOCUS_SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4, mode: "pomodoro" };
 
 const planTask = (over: Partial<PlanTaskDTO> = {}): PlanTaskDTO => ({
   id: 7, title: "Write the brief", notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null,
@@ -229,7 +229,7 @@ describe("NowNext", () => {
 
   it("says nothing about placing once a session has a place, or with nothing to place", () => {
     stub();
-    mount({ day: day({ plan: [planTask({ blocks: [{ id: 1, taskId: 7, startsAt: `${DATE}T09:00:00`, minutes: 60 }] })] }) });
+    mount({ day: day({ plan: [planTask({ blocks: [{ id: 1, taskId: 7, startsAt: `${DATE}T09:00:00`, minutes: 60, spentMinutes: 0 }] })] }) });
     expect(screen.queryByRole("button", { name: "Place in free slots" })).toBeNull();
     cleanup();
     mount({ day: day({ plan: [planTask({ estimateMinutes: null })] }) });

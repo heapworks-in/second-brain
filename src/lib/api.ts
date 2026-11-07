@@ -17,7 +17,7 @@ import { AttachmentError } from "@/domain/attachments";
 import { projectProgress, containerProgress, TaskError } from "@/domain/tasks";
 import { blocksByTask, BlockError } from "@/domain/blocks";
 import { GoalError, goalRefsByContainer, goalsWithMeasure, recentCloses, type GoalWithMeasure } from "@/domain/goals";
-import { FocusError, focusMinutesByTask, likeThisMinutesByTask } from "@/domain/focus";
+import { FocusError, focusMinutesByBlock, focusMinutesByTask, likeThisMinutesByTask } from "@/domain/focus";
 import { PredictionError } from "@/domain/predictions";
 import { addDays, localDay } from "@/domain/activity";
 import { isInterview, parseAttendeeNames } from "@/domain/activity/calendar";
@@ -132,14 +132,29 @@ export function serializeContainers(db: DB, list: Container[]): ContainerDTO[] {
   }));
 }
 
-export function serializeBlock(b: TaskBlock): BlockDTO {
-  return { id: b.id, taskId: b.taskId, startsAt: b.startsAt, minutes: b.minutes };
+/** A session row, optionally carrying what has actually been run against it. The minutes ride on
+ * the row rather than arriving as a parameter of their own: `serializeTask` already takes five,
+ * and every caller that has the figure already has the rows to hang it on. */
+export type BlockRow = TaskBlock & { spentMinutes?: number };
+
+export function serializeBlock(b: BlockRow): BlockDTO {
+  return { id: b.id, taskId: b.taskId, startsAt: b.startsAt, minutes: b.minutes, spentMinutes: b.spentMinutes ?? 0 };
+}
+
+/** Every listed task's sessions in the window, each carrying the minutes run against it: one
+ * query for the sessions and one for the runs, whatever the length of the list. */
+function blocksWithSpent(db: DB, taskIds: number[], window: { from: string; to: string }): Map<number, BlockRow[]> {
+  const byTask = blocksByTask(db, taskIds, window);
+  const spent = focusMinutesByBlock(db, [...byTask.values()].flat().map((b) => b.id));
+  const out = new Map<number, BlockRow[]>();
+  for (const [taskId, blocks] of byTask) out.set(taskId, blocks.map((b) => ({ ...b, spentMinutes: spent.get(b.id) ?? 0 })));
+  return out;
 }
 
 /** A task, its sessions, the active goals its container serves, what it has cost so far, and
  * what finished work like it cost. All four are passed in rather than read here, so a list pays
  * for one query each instead of one per row. */
-export function serializeTask(t: Task, blocks: TaskBlock[] = [], goals: GoalRefDTO[] = [], spentMinutes = 0, likeThisMinutes: number | null = null): TaskDTO {
+export function serializeTask(t: Task, blocks: BlockRow[] = [], goals: GoalRefDTO[] = [], spentMinutes = 0, likeThisMinutes: number | null = null): TaskDTO {
   return {
     id: t.id,
     title: t.title,
@@ -165,7 +180,7 @@ export function serializeTask(t: Task, blocks: TaskBlock[] = [], goals: GoalRefD
 /** The plan entry's order wins over the task's own: on a plan, position means the day's order. */
 export function serializePlanTask(
   t: Task & { planId: number; sortOrder: number },
-  blocks: TaskBlock[] = [],
+  blocks: BlockRow[] = [],
   goals: GoalRefDTO[] = [],
   spentMinutes = 0,
   likeThisMinutes: number | null = null,
@@ -198,7 +213,7 @@ function goalsByTask(db: DB, list: { id: number; containerId: number | null }[])
  * each for the lot — never one per row. The window bounds what each row carries: without one a
  * task placed every day for a year would serialize all of it. */
 export function serializeTasks(db: DB, list: Task[], window: { from: string; to: string } = taskBlockWindow()): TaskDTO[] {
-  const byTask = blocksByTask(db, list.map((t) => t.id), window);
+  const byTask = blocksWithSpent(db, list.map((t) => t.id), window);
   const goals = goalsByTask(db, list);
   const spent = focusMinutesByTask(db, list.map((t) => t.id));
   const likeThis = likeThisMinutesByTask(db, list);
@@ -212,7 +227,7 @@ export function serializePlanTasks(
   list: (Task & { planId: number; sortOrder: number })[],
   window: { from: string; to: string } = taskBlockWindow(),
 ): PlanTaskDTO[] {
-  const byTask = blocksByTask(db, list.map((t) => t.id), window);
+  const byTask = blocksWithSpent(db, list.map((t) => t.id), window);
   const goals = goalsByTask(db, list);
   const spent = focusMinutesByTask(db, list.map((t) => t.id));
   const likeThis = likeThisMinutesByTask(db, list);

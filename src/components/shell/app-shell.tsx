@@ -4,6 +4,7 @@ import { TopBar } from "./top-bar";
 import { ToastProvider } from "./toasts";
 import { Dock } from "../dock/dock";
 import { BreakOffer } from "../focus/break-offer";
+import { BoxVerdict } from "../focus/box-verdict";
 
 /** The frame every page sits in: breadcrumb bar, rail slot, dock, toasts. */
 export function AppShell({ children }: { children: ReactNode }) {
@@ -33,6 +34,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {/* Mounted once for the whole app, not per page: a run can finish while the person is
             * anywhere, and the offer that follows it should reach them wherever that is. */}
           <BreakOffer />
+          <BoxVerdict />
         </div>
         {railOpen && (
           <button

@@ -1,14 +1,14 @@
 "use client";
 
 import type { FocusBreakDTO, FocusRunDTO, FocusSettingsDTO } from "@/lib/dto";
-import type { FocusOutcome } from "@/db/enums";
+import type { FocusMode, FocusOutcome } from "@/db/enums";
 
 /** Slow enough to cost nothing: nothing but this browser starts a run, so the poll exists only
  * to notice one started in another tab — the same shape as `useRecorder`'s own poll. */
 const POLL_MS = 60_000;
 const TICK_MS = 1000;
 
-const DEFAULT_SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4 };
+const DEFAULT_SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4, mode: "pomodoro" };
 
 export interface StartFocusInput {
   /** Left out for a pomodoro on nothing in particular. */
@@ -364,6 +364,39 @@ export async function endBreak(): Promise<void> {
   } finally {
     setState({ busy: false });
   }
+}
+
+/**
+ * Switches the rhythm the pane offers, and so what the end of a run asks for. Written through
+ * `PATCH /api/settings/focus` like any other saved default, but shown immediately and rolled back
+ * if the write fails: a tab that waits on a round trip reads as broken, and a tab that lies about
+ * what it saved is worse.
+ */
+export async function setMode(mode: FocusMode): Promise<void> {
+  const before = state.settings;
+  if (before.mode === mode) return;
+  setState({ settings: { ...before, mode }, error: null });
+  try {
+    const res = await fetch("/api/settings/focus", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    if (!res.ok) setState({ settings: before, error: "Could not switch the rhythm" });
+  } catch {
+    setState({ settings: before, error: "Could not switch the rhythm" });
+  }
+}
+
+/**
+ * Whether a finished run was a box rather than a pomodoro — read by both surfaces that answer
+ * the end of a run, so the break offer and the box verdict can never both appear, or both stay
+ * away. The rhythm in force when the run finished decides it, not whether the run happened to
+ * hang off a session on the timeline: pressing focus on a block while keeping the pomodoro
+ * rhythm is still a pomodoro, and it still earns its break.
+ */
+export function wasBox(detail: FocusCompletedDetail): boolean {
+  return detail.settings.mode === "timebox";
 }
 
 /** Test-only: drops every timer and listener and puts the store back to its initial state, so

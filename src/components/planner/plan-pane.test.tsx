@@ -321,7 +321,7 @@ describe("PlanPane", () => {
     const listen = (e: Event) => seen.push((e as CustomEvent).detail);
     window.addEventListener("sb:timeline-focus", listen);
     try {
-      render(<PlanPane day={day({ plan: [{ ...planned, blocks: [{ id: 1, taskId: planned.id, startsAt: `${TODAY}T10:30:00`, minutes: 25 }] }] })} today={TODAY} onRefresh={vi.fn()} />);
+      render(<PlanPane day={day({ plan: [{ ...planned, blocks: [{ id: 1, taskId: planned.id, startsAt: `${TODAY}T10:30:00`, minutes: 25, spentMinutes: 0 }] }] })} today={TODAY} onRefresh={vi.fn()} />);
       fireEvent.click(screen.getByRole("button", { name: "Blocked at 10:30" }));
       expect(seen).toEqual([{ taskId: planned.id, blockId: 1 }]);
     } finally {
@@ -331,7 +331,7 @@ describe("PlanPane", () => {
 
   it("takes a blocked row off the timeline without taking it off the plan", async () => {
     const posts = stubPlan();
-    render(<PlanPane day={day({ plan: [{ ...planned, blocks: [{ id: 1, taskId: planned.id, startsAt: `${TODAY}T10:30:00`, minutes: 25 }] }] })} today={TODAY} onRefresh={vi.fn()} />);
+    render(<PlanPane day={day({ plan: [{ ...planned, blocks: [{ id: 1, taskId: planned.id, startsAt: `${TODAY}T10:30:00`, minutes: 25, spentMinutes: 0 }] }] })} today={TODAY} onRefresh={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Task actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Take off the timeline" }));
     // The whole day goes, and only that day: the route needs the date to know which sessions.
@@ -477,7 +477,7 @@ describe("PlanPane", () => {
     cleanup();
     const withSessions = stubPlace({ placed: 3, unplacedMinutes: 0 });
     render(
-      <PlanPane day={day({ plan: [{ ...planned, estimateMinutes: 120, blocks: [{ id: 1, taskId: planned.id, startsAt: `${TODAY}T09:00:00`, minutes: 120 }] }] })} today={TODAY} onRefresh={vi.fn()} />,
+      <PlanPane day={day({ plan: [{ ...planned, estimateMinutes: 120, blocks: [{ id: 1, taskId: planned.id, startsAt: `${TODAY}T09:00:00`, minutes: 120, spentMinutes: 0 }] }] })} today={TODAY} onRefresh={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Task actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Split into" }));

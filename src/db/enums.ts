@@ -88,3 +88,12 @@ export type PredictionKind = (typeof PREDICTION_KINDS)[number];
 /** What an estimate's numbers count. Calibration is unit-blind, so this is only for display. */
 export const PREDICTION_UNITS = ["hours", "days", "weeks"] as const;
 export type PredictionUnit = (typeof PREDICTION_UNITS)[number];
+
+/**
+ * The two rhythms a focus run can be kept to. A pomodoro is a fixed length with a break after it
+ * and a cycle behind it; a timebox is a length chosen for the work, with a hard stop and a
+ * decision at the end rather than a break. The run itself is the same row either way — the mode
+ * only decides what is offered before it starts and asked when it ends.
+ */
+export const FOCUS_MODES = ["pomodoro", "timebox"] as const;
+export type FocusMode = (typeof FOCUS_MODES)[number];

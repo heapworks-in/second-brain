@@ -48,7 +48,7 @@ const blocked: PlanTaskDTO = {
   sourceItemId: null,
   estimateMinutes: 45,
   sessionMinutes: null,
-  blocks: [{ id: 1, taskId: 12, startsAt: `${DATE}T10:30:00`, minutes: 45 }],
+  blocks: [{ id: 1, taskId: 12, startsAt: `${DATE}T10:30:00`, minutes: 45, spentMinutes: 0 }],
   goals: [],
   spentMinutes: 0,
   likeThisMinutes: null,
@@ -64,8 +64,8 @@ const twoSessions: PlanTaskDTO = {
   ...blocked,
   estimateMinutes: 90,
   blocks: [
-    { id: 1, taskId: 12, startsAt: `${DATE}T10:30:00`, minutes: 45 },
-    { id: 2, taskId: 12, startsAt: `${DATE}T14:00:00`, minutes: 45 },
+    { id: 1, taskId: 12, startsAt: `${DATE}T10:30:00`, minutes: 45, spentMinutes: 0 },
+    { id: 2, taskId: 12, startsAt: `${DATE}T14:00:00`, minutes: 45, spentMinutes: 0 },
   ],
 };
 
@@ -137,6 +137,23 @@ afterEach(() => {
 });
 
 describe("Timeline", () => {
+  it("says what a box actually cost once something has run against it, and warns when it ran over", () => {
+    const ran = { ...blocked, blocks: [{ ...blocked.blocks[0], spentMinutes: 30 }] };
+    const { rerender } = render(<Timeline date={DATE} meetings={[]} tasks={[ran]} onPatchTask={patchTask} onBlock={onBlock} workHours="09:00-18:00" />);
+    expect(screen.getByText(/ran 30m/).className).not.toContain("text-warn");
+    // The figure the whole box exists to make honest: 45 promised, 52 spent.
+    const over = { ...blocked, blocks: [{ ...blocked.blocks[0], spentMinutes: 52 }] };
+    rerender(<Timeline date={DATE} meetings={[]} tasks={[over]} onPatchTask={patchTask} onBlock={onBlock} workHours="09:00-18:00" />);
+    expect(screen.getByText(/ran 52m/).className).toContain("text-warn");
+    // Part of what the block says, not only a colour.
+    expect(screen.getByRole("group", { name: /ran 52m/ })).toBeTruthy();
+  });
+
+  it("says nothing about cost before anything has run against the box", () => {
+    render(<Timeline date={DATE} meetings={[]} tasks={[blocked]} onPatchTask={patchTask} onBlock={onBlock} workHours="09:00-18:00" />);
+    expect(screen.queryByText(/ran /)).toBeNull();
+  });
+
   it("names a block by its title, its hours, and how many are coming", () => {
     render(<Timeline date={DATE} meetings={[sync]} tasks={[]} onPatchTask={patchTask} onBlock={onBlock} />);
     expect(screen.getByRole("button", { name: "Product sync, 10:00 to 11:00, 3 attendees" })).toBeTruthy();
@@ -230,7 +247,7 @@ describe("Timeline", () => {
   // and was the one control someone actually presses from here. Its length rides the title row
   // instead of vanishing along with the row it used to share.
   it("keeps Focus on a session too short for its own time-range line", () => {
-    const quick: PlanTaskDTO = { ...blocked, id: 13, title: "Quick check", blocks: [{ id: 3, taskId: 13, startsAt: `${DATE}T10:30:00`, minutes: 15 }] };
+    const quick: PlanTaskDTO = { ...blocked, id: 13, title: "Quick check", blocks: [{ id: 3, taskId: 13, startsAt: `${DATE}T10:30:00`, minutes: 15, spentMinutes: 0 }] };
     render(<Timeline date={DATE} meetings={[]} tasks={[quick]} onPatchTask={patchTask} onBlock={onBlock} workHours="09:00-18:00" />);
     expect(screen.getByRole("button", { name: "Focus on Quick check" })).toBeTruthy();
     expect(screen.queryByText(/10:30.*10:45/)).toBeNull();
@@ -247,7 +264,7 @@ describe("Timeline", () => {
   });
 
   it("leaves another day's sessions off the column", () => {
-    const elsewhere = { ...blocked, blocks: [...blocked.blocks, { id: 9, taskId: blocked.id, startsAt: "2026-09-23T09:00:00", minutes: 30 }] };
+    const elsewhere = { ...blocked, blocks: [...blocked.blocks, { id: 9, taskId: blocked.id, startsAt: "2026-09-23T09:00:00", minutes: 30, spentMinutes: 0 }] };
     render(<Timeline date={DATE} meetings={[]} tasks={[elsewhere]} onPatchTask={patchTask} onBlock={onBlock} workHours="09:00-18:00" />);
     expect(screen.getAllByRole("group")).toHaveLength(1);
     expect(screen.getByRole("group", { name: "Write the note, 10:30 to 11:15" })).toBeTruthy();
@@ -282,7 +299,7 @@ describe("Timeline", () => {
   it("keeps a drop on the column's last pixel on the day it was made", async () => {
     const { acts, onBlock: record } = stubBlocks();
     // A session crossing midnight runs the column to 24:00, so its last minute is the day's last.
-    const late = { ...blocked, estimateMinutes: null, blocks: [{ id: 1, taskId: blocked.id, startsAt: `${DATE}T23:50:00`, minutes: 25 }] };
+    const late = { ...blocked, estimateMinutes: null, blocks: [{ id: 1, taskId: blocked.id, startsAt: `${DATE}T23:50:00`, minutes: 25, spentMinutes: 0 }] };
     render(<Timeline date={DATE} meetings={[]} tasks={[late]} onPatchTask={patchTask} onBlock={record} workHours="09:00-18:00" />);
     const col = screen.getByTestId("timeline-column");
     Object.defineProperty(col, "getBoundingClientRect", { value: () => ({ top: 0, left: 0, width: 400, height: 900 }) });
@@ -340,7 +357,7 @@ describe("Timeline", () => {
       const { rerender } = render(<Timeline date={DATE} meetings={[]} tasks={[twoSessions]} onPatchTask={patchTask} onBlock={onBlock} workHours="09:00-18:00" />);
       screen.getByRole("group", { name: "Write the note · 1 of 2, 10:30 to 11:15" }).focus();
       // A place from the plan pane: the sessions are written again, with ids of their own.
-      const replaced = { ...twoSessions, blocks: [{ id: 31, taskId: 12, startsAt: `${DATE}T09:00:00`, minutes: 45 }, { id: 32, taskId: 12, startsAt: `${DATE}T09:55:00`, minutes: 45 }] };
+      const replaced = { ...twoSessions, blocks: [{ id: 31, taskId: 12, startsAt: `${DATE}T09:00:00`, minutes: 45, spentMinutes: 0 }, { id: 32, taskId: 12, startsAt: `${DATE}T09:55:00`, minutes: 45, spentMinutes: 0 }] };
       rerender(<Timeline date={DATE} meetings={[]} tasks={[replaced]} onPatchTask={patchTask} onBlock={onBlock} workHours="09:00-18:00" />);
       expect(document.activeElement).toBe(screen.getByRole("group", { name: "Write the note · 1 of 2, 09:00 to 09:45" }));
     });
@@ -400,7 +417,7 @@ describe("Timeline", () => {
   });
 
   it("runs the column to midnight for a session that crosses it", () => {
-    const late = { ...blocked, estimateMinutes: null, blocks: [{ id: 1, taskId: blocked.id, startsAt: `${DATE}T23:50:00`, minutes: 25 }] };
+    const late = { ...blocked, estimateMinutes: null, blocks: [{ id: 1, taskId: blocked.id, startsAt: `${DATE}T23:50:00`, minutes: 25, spentMinutes: 0 }] };
     const { container } = render(<Timeline date={DATE} meetings={[]} tasks={[late]} onPatchTask={patchTask} onBlock={onBlock} workHours="09:00-18:00" />);
     const labels = Array.from(container.querySelectorAll("span.font-mono")).map((el) => el.textContent).filter((t) => /^\d\d:00$/.test(t ?? ""));
     expect(labels.at(-1)).toBe("00:00");
@@ -490,7 +507,7 @@ describe("Timeline", () => {
 
   describe("a session dropped for a task nobody estimated", () => {
     const unestimated: PlanTaskDTO = { ...blocked, id: 7, estimateMinutes: null, blocks: [] };
-    const dropped = { ...unestimated, blocks: [{ id: NEW_BLOCK, taskId: 7, startsAt: `${DATE}T10:35:00`, minutes: 25 }] };
+    const dropped = { ...unestimated, blocks: [{ id: NEW_BLOCK, taskId: 7, startsAt: `${DATE}T10:35:00`, minutes: 25, spentMinutes: 0 }] };
     const dt = { types: ["application/x-sb-plan"], getData: () => "7", dropEffect: "move" };
 
     /** Drops the row, then brings the day back holding the session the drop placed. */
@@ -570,7 +587,7 @@ describe("Timeline", () => {
     it("opens the question above a session near the foot of the column", async () => {
       stubPatch();
       const { acts, onBlock: record } = stubBlocks();
-      const late = { ...unestimated, blocks: [{ id: NEW_BLOCK, taskId: 7, startsAt: `${DATE}T17:40:00`, minutes: 25 }] };
+      const late = { ...unestimated, blocks: [{ id: NEW_BLOCK, taskId: 7, startsAt: `${DATE}T17:40:00`, minutes: 25, spentMinutes: 0 }] };
       const view = render(<Timeline date={DATE} meetings={[]} tasks={[unestimated]} onPatchTask={patchTask} onBlock={record} workHours="09:00-18:00" />);
       // 17:40 on a column that ends at 18:00: below the block there is no room for the panel.
       fireEvent.drop(column(), { dataTransfer: dt, clientY: 100 + 520 });
@@ -597,7 +614,7 @@ describe("Timeline", () => {
         <Timeline
           date={DATE}
           meetings={[]}
-          tasks={[{ ...estimated, blocks: [{ id: NEW_BLOCK, taskId: 7, startsAt: `${DATE}T10:35:00`, minutes: 45 }] }]}
+          tasks={[{ ...estimated, blocks: [{ id: NEW_BLOCK, taskId: 7, startsAt: `${DATE}T10:35:00`, minutes: 45, spentMinutes: 0 }] }]}
           onPatchTask={patchTask}
           onBlock={record}
           workHours="09:00-18:00"

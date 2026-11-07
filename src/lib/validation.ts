@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CONTAINER_KINDS, RESOURCE_CATEGORIES, TASK_PRIORITIES, TASK_STATUSES, GOAL_HORIZONS, GOAL_STATUSES, FOCUS_OUTCOMES, MEETING_DECISIONS, PREDICTION_UNITS, type ReviewStep } from "@/db/enums";
+import { CONTAINER_KINDS, RESOURCE_CATEGORIES, TASK_PRIORITIES, TASK_STATUSES, GOAL_HORIZONS, GOAL_STATUSES, FOCUS_MODES, FOCUS_OUTCOMES, MEETING_DECISIONS, PREDICTION_UNITS, type ReviewStep } from "@/db/enums";
 import { MIN_FOCUS_MINUTES, MAX_FOCUS_MINUTES } from "@/domain/focus";
 
 export const DateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -48,6 +48,14 @@ export const PlanBody = z.object({ date: DateString, taskId: z.number().int().po
 /** A session on the timeline: a start in local time and how long it runs. */
 export const BlockBody = z.object({ taskId: z.number().int().positive(), startsAt: LocalTimestamp, minutes: z.number().int().min(5).max(480) }).strict();
 export const PatchBlockBody = BlockBody.partial().omit({ taskId: true }).strict();
+/** `POST /api/blocks` with no slot named: one session this long in the first free time on the
+ * day, at or after now — "another box" when a timebox is up and the work is not. Kept as its own
+ * schema rather than folded into `BlockBody` so `PatchBlockBody` above still derives from a plain
+ * object; the route parses the union of the two. */
+export const NextFreeBlockBody = z
+  .object({ taskId: z.number().int().positive(), date: DateString, minutes: z.number().int().min(5).max(480), at: z.literal("next-free") })
+  .strict();
+export const PostBlockBody = z.union([BlockBody, NextFreeBlockBody]);
 /** Place one task's sessions, or every unplaced plan task's when no task is named. */
 export const PlaceBody = z.object({ date: DateString, taskId: z.number().int().positive().optional() }).strict();
 export const ReorderPlanBody = z.object({ date: DateString, taskIds: z.array(z.number().int().positive()) }).strict();
@@ -120,6 +128,7 @@ export const FocusSettingsBody = z
     shortBreak: z.number().int().min(1).max(60),
     longBreak: z.number().int().min(1).max(60),
     longBreakEvery: z.number().int().min(2).max(12),
+    mode: z.enum(FOCUS_MODES),
   })
   .partial()
   .strict();

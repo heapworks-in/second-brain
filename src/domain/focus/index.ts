@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { focusRuns, tasks, type FocusRun, type TaskBlock } from "@/db/schema";
-import type { FocusOutcome } from "@/db/enums";
+import { FOCUS_MODES, type FocusMode, type FocusOutcome } from "@/db/enums";
 import { getTask } from "@/domain/tasks";
 import { getBlock } from "@/domain/blocks";
 import { getSetting, setSetting } from "@/domain/settings";
@@ -42,19 +42,30 @@ export interface FocusSettings {
   shortBreak: number;
   longBreak: number;
   longBreakEvery: number;
+  /** Which rhythm the focus pane offers, and so whether a finished run ends in a break or in a
+   * decision. Saved rather than held in a component: it is a way of working, not a tab. */
+  mode: FocusMode;
 }
 
 const DEFAULT_MINUTES_KEY = "focus.defaultMinutes";
 const SHORT_BREAK_KEY = "focus.shortBreak";
 const LONG_BREAK_KEY = "focus.longBreak";
 const LONG_BREAK_EVERY_KEY = "focus.longBreakEvery";
+const MODE_KEY = "focus.mode";
 
-const FOCUS_SETTINGS_DEFAULTS: FocusSettings = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4 };
+const FOCUS_SETTINGS_DEFAULTS: FocusSettings = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4, mode: "pomodoro" };
 
 const MIN_BREAK_MINUTES = 1;
 const MAX_BREAK_MINUTES = 60;
 const MIN_LONG_BREAK_EVERY = 2;
 const MAX_LONG_BREAK_EVERY = 12;
+
+/** A stored value that is not one of the two modes reads as the default rather than taking down
+ * every surface that switches on it: the pane renders before anything validates what it read. */
+function readMode(db: DB): FocusMode {
+  const raw = getSetting(db, MODE_KEY, FOCUS_SETTINGS_DEFAULTS.mode);
+  return (FOCUS_MODES as readonly string[]).includes(raw) ? (raw as FocusMode) : FOCUS_SETTINGS_DEFAULTS.mode;
+}
 
 export function getFocusSettings(db: DB): FocusSettings {
   return {
@@ -62,6 +73,7 @@ export function getFocusSettings(db: DB): FocusSettings {
     shortBreak: Number(getSetting(db, SHORT_BREAK_KEY, String(FOCUS_SETTINGS_DEFAULTS.shortBreak))),
     longBreak: Number(getSetting(db, LONG_BREAK_KEY, String(FOCUS_SETTINGS_DEFAULTS.longBreak))),
     longBreakEvery: Number(getSetting(db, LONG_BREAK_EVERY_KEY, String(FOCUS_SETTINGS_DEFAULTS.longBreakEvery))),
+    mode: readMode(db),
   };
 }
 
@@ -93,6 +105,10 @@ export function setFocusSettings(db: DB, patch: Partial<FocusSettings>): FocusSe
       throw new FocusError(`Long breaks come every ${MIN_LONG_BREAK_EVERY} to ${MAX_LONG_BREAK_EVERY} runs`);
     }
     setSetting(db, LONG_BREAK_EVERY_KEY, String(patch.longBreakEvery));
+  }
+  if (patch.mode !== undefined) {
+    if (!(FOCUS_MODES as readonly string[]).includes(patch.mode)) throw new FocusError(`A rhythm is ${FOCUS_MODES.join(" or ")}`);
+    setSetting(db, MODE_KEY, patch.mode);
   }
   return getFocusSettings(db);
 }
@@ -235,6 +251,26 @@ export function focusMinutesByTask(db: DB, taskIds: number[]): Map<number, numbe
   for (const row of rows) {
     if (row.taskId === null) continue;
     out.set(row.taskId, (out.get(row.taskId) ?? 0) + (row.minutes ?? 0));
+  }
+  return out;
+}
+
+/**
+ * Minutes actually run against each named session — what a box on the timeline cost, against the
+ * length it was promised. The same shape and the same rules as `focusMinutesByTask` one query up:
+ * an abandoned run is never in this map, and a session nothing ran against is simply absent.
+ */
+export function focusMinutesByBlock(db: DB, blockIds: number[]): Map<number, number> {
+  const out = new Map<number, number>();
+  if (blockIds.length === 0) return out;
+  const rows = db
+    .select({ blockId: focusRuns.blockId, minutes: focusRuns.actualMinutes })
+    .from(focusRuns)
+    .where(and(inArray(focusRuns.blockId, blockIds), isNotNull(focusRuns.actualMinutes), ne(focusRuns.outcome, "abandoned")))
+    .all();
+  for (const row of rows) {
+    if (row.blockId === null) continue;
+    out.set(row.blockId, (out.get(row.blockId) ?? 0) + (row.minutes ?? 0));
   }
   return out;
 }

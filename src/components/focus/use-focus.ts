@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { FocusBreakDTO, FocusRunDTO, FocusSettingsDTO } from "@/lib/dto";
-import type { FocusOutcome } from "@/db/enums";
+import type { FocusMode, FocusOutcome } from "@/db/enums";
 import * as store from "./focus-store";
 
 export type { StartFocusInput, FocusCompletedDetail } from "./focus-store";
@@ -30,6 +30,8 @@ export interface UseFocusResult {
   /** Take the break the cycle calls for, or one of a given length. */
   takeBreak: (minutes?: number) => Promise<void>;
   endBreak: () => Promise<void>;
+  /** Switch between the pomodoro cycle and the timebox. Saved, so it holds across pages. */
+  setMode: (mode: FocusMode) => Promise<void>;
 }
 
 /**
@@ -53,5 +55,6 @@ export function useFocus(): UseFocusResult {
     breakState: state.breakState,
     takeBreak: store.takeBreak,
     endBreak: store.endBreak,
+    setMode: store.setMode,
   };
 }

@@ -1,4 +1,4 @@
-import type { ItemStatus, ItemType, ContainerKind, ContainerStatus, ResourceCategory, GoalHorizon, GoalStatus, FocusOutcome, ReviewStep, MeetingDecision, PredictionKind, PredictionUnit } from "@/db/enums";
+import type { ItemStatus, ItemType, ContainerKind, ContainerStatus, ResourceCategory, GoalHorizon, GoalStatus, FocusMode, FocusOutcome, ReviewStep, MeetingDecision, PredictionKind, PredictionUnit } from "@/db/enums";
 import type { CheckResult } from "@/db/safety";
 import type { Distillation } from "@/domain/distill";
 
@@ -70,6 +70,11 @@ export interface BlockDTO {
   taskId: number;
   startsAt: string;
   minutes: number;
+  /** Minutes actually run against this session — what the box cost, against the `minutes` it was
+   * promised. 0 until a focus run has been started from it and booked something; an abandoned run
+   * books nothing. Only the day's own payload fills this in; a session written by `POST
+   * /api/blocks` answers 0 because nothing can have run against it yet. */
+  spentMinutes: number;
 }
 
 export interface TaskDTO {
@@ -562,6 +567,9 @@ export interface FocusBreakDTO {
 }
 
 export interface FocusSettingsDTO {
+  /** Which rhythm the pane offers: a pomodoro cycle with breaks, or a box with a decision at the
+   * end. Both end up in the same `focus_runs` row. */
+  mode: FocusMode;
   defaultMinutes: number;
   shortBreak: number;
   longBreak: number;

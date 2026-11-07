@@ -105,8 +105,10 @@ export function TaskBlock({ task, block, index, count, date, top, height, col, c
   const start = block.startsAt;
   const end = blockEnd(block);
   const done = task.status === "done";
+  const over = block.spentMinutes > block.minutes;
   const mark = count > 1 ? ` · ${index} of ${count}` : "";
-  const name = `${task.title}${mark}, ${formatClock(start)} to ${formatClock(end)}`;
+  const ran = block.spentMinutes > 0 ? `, ran ${formatMinutes(block.spentMinutes)}` : "";
+  const name = `${task.title}${mark}, ${formatClock(start)} to ${formatClock(end)}${ran}`;
 
   async function move(deltaMinutes: number) {
     const from = pending.current ?? isoToMinutes(start);
@@ -257,6 +259,13 @@ export function TaskBlock({ task, block, index, count, date, top, height, col, c
         {height * pxPerMin >= 30 && (
           <span className="font-mono text-[11px] text-fg-faint truncate">
             {formatClock(start)}–{formatClock(end)} · {formatMinutes(block.minutes)}
+            {/* What the box actually cost, once something has run against it. A box is a promise
+                about time, and a promise nobody ever checks is a wish: this is the only place the
+                two numbers sit side by side. Warn rather than danger when it ran over -- the
+                figure is there to make the next estimate honest, not to tell anyone off. */}
+            {block.spentMinutes > 0 && (
+              <span className={over ? "text-warn" : undefined}>{` · ran ${formatMinutes(block.spentMinutes)}`}</span>
+            )}
           </span>
         )}
       </div>

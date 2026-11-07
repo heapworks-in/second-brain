@@ -20,7 +20,7 @@ const planned: PlanTaskDTO = {
   title: "Write the brief",
   planId: 3,
   estimateMinutes: 45,
-  blocks: [{ id: 5, taskId: 2, startsAt: `${TODAY}T10:30:00`, minutes: 45 }],
+  blocks: [{ id: 5, taskId: 2, startsAt: `${TODAY}T10:30:00`, minutes: 45, spentMinutes: 0 }],
 };
 
 function day(): PlannerDayDTO {
@@ -53,7 +53,7 @@ function mountPlan(): { calls: { url: string; method?: string; body: unknown }[]
       if (url === "/api/meetings/recorder") return Response.json({ state: "idle", missing: [] });
       calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : null });
       // The add answers with the session it made; everything else answers with nothing.
-      return init?.method === "POST" && url === "/api/blocks" ? Response.json({ id: 9, taskId: 2, startsAt: `${TODAY}T10:35:00`, minutes: 25 }, { status: 201 }) : new Response(null, { status: 204 });
+      return init?.method === "POST" && url === "/api/blocks" ? Response.json({ id: 9, taskId: 2, startsAt: `${TODAY}T10:35:00`, minutes: 25, spentMinutes: 0 }, { status: 201 }) : new Response(null, { status: 204 });
     }),
   );
   const onRefresh = vi.fn();

@@ -6,7 +6,7 @@ import { resetFocusStore } from "./focus-store";
 import type { FocusCompletedDetail } from "./use-focus";
 import type { FocusRunDTO, FocusSettingsDTO } from "@/lib/dto";
 
-const SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 7, longBreak: 21, longBreakEvery: 4 };
+const SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 7, longBreak: 21, longBreakEvery: 4, mode: "pomodoro" };
 
 function run(over: Partial<FocusRunDTO> = {}): FocusRunDTO {
   return {
@@ -78,6 +78,12 @@ describe("BreakOffer", () => {
     expect(p.tagName).toBe("P");
     expect(p.getAttribute("role")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("stands aside for a box: a timebox ends in a decision, and `BoxVerdict` answers that run", async () => {
+    render(<BreakOffer />);
+    complete({ settings: { ...SETTINGS, mode: "timebox" } });
+    await waitFor(() => expect(screen.queryByText(/Take \d+ minutes\?/)).toBeNull());
   });
 
   it("offers the saved short break normally", async () => {

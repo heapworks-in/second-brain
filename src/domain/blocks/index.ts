@@ -127,6 +127,28 @@ export function addBlock(db: DB, input: { taskId: number; startsAt: string; minu
 }
 
 /**
+ * One more session of `minutes` for the task, in the first free time on `date` at or after now —
+ * what "another box" means when a timebox is up and the work is not.
+ *
+ * Nothing else about the day moves. `placeTask` lays a task's whole day out from scratch, which
+ * is the wrong answer here: the boxes already run are history, and the ones still ahead were put
+ * where they are on purpose. `minSlot` is the box's own length, so the slot found has room for
+ * the whole of it and `placeSessions` never splits it across two — a box cut in half is not a
+ * box.
+ */
+export function appendBlock(db: DB, input: { taskId: number; minutes: number; date: string; now?: Date }): TaskBlock {
+  requireTask(db, input.taskId);
+  checkDate(input.date);
+  checkMinutes(input.minutes);
+  const now = input.now ?? new Date();
+  const notBefore = input.date === localToday(now) ? now.getHours() * 60 + now.getMinutes() : undefined;
+  const slots = freeSlots(busySpans(db, input.date), getWorkHours(db), { notBefore, minSlot: input.minutes });
+  const { placed } = placeSessions(slots, [input.minutes], { floor: input.minutes });
+  if (placed.length === 0) throw new BlockError(`No ${input.minutes} free minutes left that day`, 409);
+  return addBlock(db, { taskId: input.taskId, startsAt: minutesToIso(input.date, placed[0].start), minutes: input.minutes });
+}
+
+/**
  * The estimate is the total, so it may not sit under the day's sessions: a session resized past
  * it pulls it up to their sum. An estimate nobody has guessed stays unguessed.
  */

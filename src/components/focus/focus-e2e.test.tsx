@@ -15,7 +15,7 @@ import type { FocusRunDTO, FocusSettingsDTO } from "@/lib/dto";
 const STARTED_AT = "2026-09-25T10:00:00.000Z";
 // Deliberately not the module's own DEFAULT_SETTINGS shape: a regression that falls back to it
 // (or to `completedToday: 1`) fails this test, the same way it failed F3.
-const SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 7, longBreak: 21, longBreakEvery: 4 };
+const SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 7, longBreak: 21, longBreakEvery: 4, mode: "pomodoro" };
 
 beforeEach(() => {
   resetFocusStore();

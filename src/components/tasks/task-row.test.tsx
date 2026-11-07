@@ -436,7 +436,7 @@ describe("TaskRow blocks", () => {
     const listen = (e: Event) => focus.push((e as CustomEvent).detail);
     window.addEventListener("sb:timeline-focus", listen);
     try {
-      renderRow({ onBlockNow, onUnblock, blockDate: "2026-09-16" }, { ...task, blocks: [{ id: 1, taskId: task.id, startsAt: "2026-09-16T10:30:00", minutes: 25 }] });
+      renderRow({ onBlockNow, onUnblock, blockDate: "2026-09-16" }, { ...task, blocks: [{ id: 1, taskId: task.id, startsAt: "2026-09-16T10:30:00", minutes: 25, spentMinutes: 0 }] });
       fireEvent.click(screen.getByRole("button", { name: "Blocked at 10:30" }));
       // The chip names the session it speaks for, not only the task that holds it.
       expect(focus).toEqual([{ taskId: task.id, blockId: 1 }]);
@@ -456,7 +456,7 @@ describe("TaskRow blocks", () => {
     // No day to measure against, and a day that is not the block's: neither has a column here
     // to jump to, so the figure is said rather than offered.
     for (const extra of [{ onBlockNow: vi.fn() }, { onBlockNow: vi.fn(), blockDate: "2026-09-17" }]) {
-      renderRow(extra, { ...task, blocks: [{ id: 1, taskId: task.id, startsAt: "2026-09-16T10:30:00", minutes: 25 }] });
+      renderRow(extra, { ...task, blocks: [{ id: 1, taskId: task.id, startsAt: "2026-09-16T10:30:00", minutes: 25, spentMinutes: 0 }] });
       expect(screen.queryByRole("button", { name: /^Blocked at/ })).toBeNull();
       expect(screen.getByTitle("Blocked on Wed 16 at 10:30").textContent).toBe("10:30");
       cleanup();
@@ -469,8 +469,8 @@ describe("TaskRow blocks", () => {
       {
         ...task,
         blocks: [
-          { id: 1, taskId: task.id, startsAt: "2026-09-15T09:00:00", minutes: 25 },
-          { id: 2, taskId: task.id, startsAt: "2026-09-18T14:00:00", minutes: 25 },
+          { id: 1, taskId: task.id, startsAt: "2026-09-15T09:00:00", minutes: 25, spentMinutes: 0 },
+          { id: 2, taskId: task.id, startsAt: "2026-09-18T14:00:00", minutes: 25, spentMinutes: 0 },
         ],
       },
     );
@@ -485,8 +485,8 @@ describe("TaskRow blocks", () => {
       {
         ...task,
         blocks: [
-          { id: 1, taskId: task.id, startsAt: "2026-09-10T09:00:00", minutes: 25 },
-          { id: 2, taskId: task.id, startsAt: "2026-09-14T14:00:00", minutes: 25 },
+          { id: 1, taskId: task.id, startsAt: "2026-09-10T09:00:00", minutes: 25, spentMinutes: 0 },
+          { id: 2, taskId: task.id, startsAt: "2026-09-14T14:00:00", minutes: 25, spentMinutes: 0 },
         ],
       },
     );
@@ -528,8 +528,8 @@ describe("TaskRow blocks", () => {
         {
           ...task,
           blocks: [
-            { id: 4, taskId: task.id, startsAt: "2026-09-16T10:30:00", minutes: 45 },
-            { id: 5, taskId: task.id, startsAt: "2026-09-16T14:00:00", minutes: 45 },
+            { id: 4, taskId: task.id, startsAt: "2026-09-16T10:30:00", minutes: 45, spentMinutes: 0 },
+            { id: 5, taskId: task.id, startsAt: "2026-09-16T14:00:00", minutes: 45, spentMinutes: 0 },
           ],
         },
       );
@@ -548,8 +548,8 @@ describe("TaskRow blocks", () => {
       {
         ...task,
         blocks: [
-          { id: 4, taskId: task.id, startsAt: "2026-09-16T10:30:00", minutes: 45 },
-          { id: 5, taskId: task.id, startsAt: "2026-09-17T09:00:00", minutes: 45 },
+          { id: 4, taskId: task.id, startsAt: "2026-09-16T10:30:00", minutes: 45, spentMinutes: 0 },
+          { id: 5, taskId: task.id, startsAt: "2026-09-17T09:00:00", minutes: 45, spentMinutes: 0 },
         ],
       },
     );

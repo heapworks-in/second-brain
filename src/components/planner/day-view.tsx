@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import type { BlockDTO, PlannerDayDTO } from "@/lib/dto";
 import { PlanPane } from "./plan-pane";
-import { PomodoroPane } from "./pomodoro-pane";
+import { FocusPane } from "./focus-pane";
 import { Timeline, type BlockAction, type BlockResult } from "./timeline";
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -76,7 +76,7 @@ export function DayView({ day, today, onRefresh }: { day: PlannerDayDTO; today: 
           a live clock that gets glanced at, where the plan is read. `nextTask` is the same
           next-unfinished-task PlanPane itself highlights, so the two cannot name different work. */}
       <div className="min-[1100px]:order-2 flex flex-col gap-6">
-        <PomodoroPane nextTask={day.plan.find((t) => t.status !== "done") ?? null} />
+        <FocusPane nextTask={day.plan.find((t) => t.status !== "done") ?? null} />
         <PlanPane day={day} today={today} onRefresh={onRefresh} />
       </div>
       <div className="min-[1100px]:order-1">

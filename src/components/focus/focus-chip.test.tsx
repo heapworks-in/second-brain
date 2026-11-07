@@ -6,7 +6,7 @@ import { resetFocusStore } from "./focus-store";
 import type { FocusRunDTO, FocusSettingsDTO } from "@/lib/dto";
 
 const STARTED_AT = "2026-09-25T10:00:00.000Z";
-const SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4 };
+const SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4, mode: "pomodoro" };
 
 function run(over: Partial<FocusRunDTO> = {}): FocusRunDTO {
   return {

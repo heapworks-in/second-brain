@@ -8,7 +8,7 @@ import type { FocusRunDTO, FocusSettingsDTO } from "@/lib/dto";
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
-const SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4 };
+const SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4, mode: "pomodoro" };
 const STARTED_AT = "2026-09-25T10:00:00.000Z";
 
 function run(over: Partial<FocusRunDTO> = {}): FocusRunDTO {

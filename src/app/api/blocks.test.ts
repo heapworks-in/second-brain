@@ -100,18 +100,37 @@ beforeAll(async () => {
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 describe("blocks api", () => {
+  it("puts another box in the first free time on the day, and refuses a body that is neither shape", async () => {
+    // A day of its own, well clear of the placement cases below: this suite shares one database,
+    // so a box left on PLACE_DAY would change what "fills the day" there has room for.
+    const boxDay = shift(20);
+    const taskId = await addTask("Migrate the store");
+    const first = await r.blocks.POST(json("POST", "/api/blocks", { taskId, minutes: 45, date: boxDay, at: "next-free" }));
+    expect(first.status).toBe(201);
+    expect(await first.json()).toMatchObject({ taskId, startsAt: `${boxDay}T09:00:00`, minutes: 45, spentMinutes: 0 });
+
+    // The next one takes the first free time left, which is the end of the one already there.
+    const second = await r.blocks.POST(json("POST", "/api/blocks", { taskId, minutes: 45, date: boxDay, at: "next-free" }));
+    expect(await second.json()).toMatchObject({ startsAt: `${boxDay}T09:45:00`, minutes: 45 });
+
+    // Neither a slot nor a day: a start and `at` together name two different things.
+    expect((await r.blocks.POST(json("POST", "/api/blocks", { taskId, minutes: 45, at: "next-free" }))).status).toBe(400);
+    expect((await r.blocks.POST(json("POST", "/api/blocks", { taskId, minutes: 45, date: boxDay, at: "whenever" }))).status).toBe(400);
+    expect((await r.blocks.POST(json("POST", "/api/blocks", { taskId, minutes: 45, date: boxDay, startsAt: `${boxDay}T09:00:00`, at: "next-free" }))).status).toBe(400);
+  });
+
   it("creates, moves, resizes and removes a session", async () => {
     const taskId = await addTask("Write the launch note", { estimateMinutes: 60 });
     const block = await addBlock(taskId, `${DAY}T09:00:00`, 45);
-    expect(block).toEqual({ id: block.id, taskId, startsAt: `${DAY}T09:00:00`, minutes: 45 });
+    expect(block).toEqual({ id: block.id, taskId, startsAt: `${DAY}T09:00:00`, minutes: 45, spentMinutes: 0 });
 
     const moved = await r.block.PATCH(json("PATCH", "/x", { startsAt: `${DAY}T11:30:00`, minutes: 30 }), params(block.id));
     expect(moved.status).toBe(200);
-    expect(await moved.json()).toEqual({ id: block.id, taskId, startsAt: `${DAY}T11:30:00`, minutes: 30 });
+    expect(await moved.json()).toEqual({ id: block.id, taskId, startsAt: `${DAY}T11:30:00`, minutes: 30, spentMinutes: 0 });
 
     // The task carries its sessions wherever it is listed.
     const listed = (await (await r.tasks.GET(json("GET", "/api/tasks?status=open"))).json()) as { tasks: { id: number; blocks: BlockBody[] }[] };
-    expect(listed.tasks.find((t) => t.id === taskId)!.blocks).toEqual([{ id: block.id, taskId, startsAt: `${DAY}T11:30:00`, minutes: 30 }]);
+    expect(listed.tasks.find((t) => t.id === taskId)!.blocks).toEqual([{ id: block.id, taskId, startsAt: `${DAY}T11:30:00`, minutes: 30, spentMinutes: 0 }]);
 
     expect((await r.block.DELETE(json("DELETE", "/x"), params(block.id))).status).toBe(204);
     expect((await r.block.DELETE(json("DELETE", "/x"), params(block.id))).status).toBe(404);

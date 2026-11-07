@@ -10,6 +10,7 @@ import {
   finishFocus,
   runningFocus,
   focusMinutesByTask,
+  focusMinutesByBlock,
   focusSummary,
   completedToday,
   focusWhere,
@@ -117,6 +118,30 @@ describe("a focus run", () => {
     expect(getFocusSettings(t.db).defaultMinutes).toBe(25);
     const run = startFocus(t.db, { taskId: task.id }, at("09:00"));
     expect(run.plannedMinutes).toBe(25);
+  });
+
+  it("books its minutes against the session it was a box for, so the promise can be read against the cost", () => {
+    const task = createTask(t.db, { title: "Migrate" });
+    const box = addBlock(t.db, { taskId: task.id, startsAt: "2026-09-24T09:00:00", minutes: 45 });
+    const other = addBlock(t.db, { taskId: task.id, startsAt: "2026-09-24T14:00:00", minutes: 45 });
+
+    // A box run to the end costs exactly what it promised.
+    finishFocus(t.db, startFocus(t.db, { taskId: task.id, blockId: box.id }, at("09:00")).id, "completed", at("09:45"));
+    expect(focusMinutesByBlock(t.db, [box.id, other.id]).get(box.id)).toBe(45);
+    // A session nothing ran against is simply absent, never a zero.
+    expect(focusMinutesByBlock(t.db, [box.id, other.id]).has(other.id)).toBe(false);
+
+    // A second run against the same box adds to it: that is how an overrun becomes visible.
+    finishFocus(t.db, startFocus(t.db, { taskId: task.id, blockId: box.id }, at("10:00")).id, "stopped", at("10:20"));
+    expect(focusMinutesByBlock(t.db, [box.id]).get(box.id)).toBe(65);
+
+    // An abandoned run books nothing here either.
+    finishFocus(t.db, startFocus(t.db, { taskId: task.id, blockId: other.id }, at("11:00")).id, "stopped", at("11:01"));
+    expect(focusMinutesByBlock(t.db, [other.id]).has(other.id)).toBe(false);
+    // A run on the task but not on any session of it belongs to neither.
+    finishFocus(t.db, startFocus(t.db, { taskId: task.id, minutes: 25 }, at("12:00")).id, "completed", at("12:25"));
+    expect(focusMinutesByBlock(t.db, [box.id, other.id]).get(box.id)).toBe(65);
+    expect(focusMinutesByBlock(t.db, [])).toEqual(new Map());
   });
 
   it("refuses a blockId that does not exist, or belongs to a different task", () => {

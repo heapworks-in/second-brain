@@ -7,7 +7,7 @@ import { addToPlan } from "@/domain/plan";
 import { freeMinutes } from "@/lib/capacity";
 import { setMeetingDecision } from "@/domain/meetings/decision";
 import { completeTask, createTask, deleteTask, dropTask, getTask } from "@/domain/tasks";
-import { addBlock, blocksByTask, BlockError, clearBlocks, fillDay, listBlocks, placeTask, removeBlock, updateBlock } from "./index";
+import { addBlock, appendBlock, blocksByTask, BlockError, clearBlocks, fillDay, listBlocks, placeTask, removeBlock, updateBlock } from "./index";
 
 const DAY = "2026-10-05";
 const NEXT = "2026-10-06";
@@ -39,6 +39,45 @@ describe("blocks domain", () => {
     expect(() => addBlock(t.db, { taskId: task.id, startsAt: `${DAY}T10:00:00`, minutes: 4 })).toThrow(/5 and 480/);
     expect(() => addBlock(t.db, { taskId: task.id, startsAt: `${DAY}T10:00:00`, minutes: 481 })).toThrow(/5 and 480/);
     expect(() => addBlock(t.db, { taskId: 999, startsAt: `${DAY}T10:00:00`, minutes: 45 })).toThrow(BlockError);
+  });
+
+  describe("another box", () => {
+    /** 10:00 on the day in hand, so the first free time is the morning rather than the hour the
+     * suite happens to run in. */
+    const at10 = new Date(`${DAY}T10:00:00`);
+
+    it("puts one more session in the first free time at or after now", () => {
+      const task = createTask(t.db, { title: "Migrate" });
+      replaceCalendarEvents(t.db, [meeting("sync", "11:00", "12:00")]);
+      // 10:00 to 11:00 has room for a 45-minute box, so that is where it goes.
+      expect(appendBlock(t.db, { taskId: task.id, minutes: 45, date: DAY, now: at10 })).toMatchObject({ startsAt: `${DAY}T10:00:00`, minutes: 45 });
+      // A 90-minute box does not fit that hour, and is never cut in half to make it: it waits
+      // for the first slot that holds the whole of it.
+      expect(appendBlock(t.db, { taskId: task.id, minutes: 90, date: DAY, now: at10 })).toMatchObject({ startsAt: `${DAY}T12:00:00`, minutes: 90 });
+    });
+
+    it("leaves every session already on the day where it is", () => {
+      const task = createTask(t.db, { title: "Migrate" });
+      const afternoon = addBlock(t.db, { taskId: task.id, startsAt: `${DAY}T14:00:00`, minutes: 60 });
+      appendBlock(t.db, { taskId: task.id, minutes: 45, date: DAY, now: at10 });
+      const starts = listBlocks(t.db, { taskId: task.id, date: DAY }).map((b) => b.startsAt);
+      expect(starts).toEqual([`${DAY}T10:00:00`, `${DAY}T14:00:00`]);
+      expect(getTask(t.db, task.id)).toBeTruthy();
+      expect(listBlocks(t.db, { taskId: task.id, date: DAY }).find((b) => b.id === afternoon.id)!.minutes).toBe(60);
+    });
+
+    it("says so rather than squeezing when the day has no room left", () => {
+      const task = createTask(t.db, { title: "Migrate" });
+      replaceCalendarEvents(t.db, [meeting("all-day-sync", "09:00", "18:00")]);
+      expect(() => appendBlock(t.db, { taskId: task.id, minutes: 45, date: DAY, now: at10 })).toThrow(/No 45 free minutes/);
+    });
+
+    it("checks its task, its date and its length", () => {
+      const task = createTask(t.db, { title: "Migrate" });
+      expect(() => appendBlock(t.db, { taskId: 999, minutes: 45, date: DAY, now: at10 })).toThrow(BlockError);
+      expect(() => appendBlock(t.db, { taskId: task.id, minutes: 45, date: "05-10-2026", now: at10 })).toThrow(/YYYY-MM-DD/);
+      expect(() => appendBlock(t.db, { taskId: task.id, minutes: 4, date: DAY, now: at10 })).toThrow(/5 and 480/);
+    });
   });
 
   it("moves and resizes a session, pulling the estimate up to the day's sessions", () => {

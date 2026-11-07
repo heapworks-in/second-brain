@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import type { PlanTaskDTO } from "@/lib/dto";
-import { PomodoroPane } from "./pomodoro-pane";
+import { FocusPane } from "./focus-pane";
 import { resetFocusStore } from "../focus/focus-store";
 
 const task: PlanTaskDTO = {
@@ -58,12 +58,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("PomodoroPane", () => {
+describe("FocusPane", () => {
   beforeEach(() => resetFocusStore());
 
   it("offers the next planned task, at the configured length", async () => {
     stubFocus({});
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     expect(await screen.findByRole("button", { name: "25m on Write the migration" })).toBeTruthy();
   });
 
@@ -71,14 +71,14 @@ describe("PomodoroPane", () => {
    *  way to start at all, which is the one time somebody most wants to just start. */
   it("can still start on an unplanned day", async () => {
     stubFocus({});
-    render(<PomodoroPane nextTask={null} />);
+    render(<FocusPane nextTask={null} />);
     expect(await screen.findByRole("button", { name: "25m on…" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Just 25m" })).toBeTruthy();
   });
 
   it("starts a run on nothing in particular, naming no task", async () => {
     const calls = stubFocus({});
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     fireEvent.click(await screen.findByRole("button", { name: "Just 25m" }));
     await waitFor(() => expect(calls.some((c) => c.url === "/api/focus" && c.method === "POST")).toBe(true));
     expect(calls.find((c) => c.method === "POST" && c.url === "/api/focus")!.body).toEqual({ minutes: 25 });
@@ -86,7 +86,7 @@ describe("PomodoroPane", () => {
 
   it("offers any open task, not only the planned one", async () => {
     const calls = stubFocus({});
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     fireEvent.click(await screen.findByRole("button", { name: "On…" }));
     const other = await screen.findByRole("button", { name: "Review the rollout" });
     fireEvent.click(other);
@@ -96,7 +96,7 @@ describe("PomodoroPane", () => {
 
   it("filters the tasks it offers", async () => {
     stubFocus({});
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     fireEvent.click(await screen.findByRole("button", { name: "On…" }));
     await screen.findByRole("button", { name: "Review the rollout" });
     fireEvent.change(screen.getByLabelText("Find a task to focus on"), { target: { value: "rollout" } });
@@ -107,13 +107,13 @@ describe("PomodoroPane", () => {
   /** The cycle has been configured since the feature shipped and was never once shown. */
   it("shows how far through the cycle the day is", async () => {
     stubFocus({ completedToday: 3 });
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     expect(await screen.findByRole("img", { name: "3 of 4 before a long break" })).toBeTruthy();
   });
 
   it("reads a completed cycle as a full row, not an empty one", async () => {
     stubFocus({ completedToday: 4 });
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     expect(await screen.findByRole("img", { name: "4 of 4 before a long break" })).toBeTruthy();
   });
 
@@ -121,7 +121,7 @@ describe("PomodoroPane", () => {
     stubFocus({
       run: { id: 1, taskId: 4, taskTitle: "Write the migration", startedAt: new Date(Date.now() - 60_000).toISOString(), endedAt: null, plannedMinutes: 25, actualMinutes: null, outcome: null, blockId: null },
     });
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     expect(await screen.findByText("Focusing")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
     expect(screen.getByText(/^2[34]:/)).toBeTruthy();
@@ -131,20 +131,20 @@ describe("PomodoroPane", () => {
   // still show it, which is only possible because it comes from the server.
   it("shows a break it never started itself", async () => {
     stubFocus({ break: { endsAt: new Date(Date.now() + 240_000).toISOString(), remainingMs: 240_000, minutes: 5 } });
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     expect(await screen.findByText("Short break")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Back to work" })).toBeTruthy();
   });
 
   it("names the long break as the long one", async () => {
     stubFocus({ break: { endsAt: new Date(Date.now() + 600_000).toISOString(), remainingMs: 600_000, minutes: 15 } });
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     expect(await screen.findByText("Long break")).toBeTruthy();
   });
 
   it("asks the server for a break rather than deciding the length itself", async () => {
     const calls = stubFocus({});
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     fireEvent.click(await screen.findByRole("button", { name: "Break" }));
     await waitFor(() => expect(calls.some((c) => c.url === "/api/focus/break" && c.method === "POST")).toBe(true));
     // No minutes: which break this is depends on the cycle, which the server already counts.
@@ -153,8 +153,61 @@ describe("PomodoroPane", () => {
 
   it("ends the break through the server, so another surface sees it end too", async () => {
     const calls = stubFocus({ break: { endsAt: new Date(Date.now() + 60_000).toISOString(), remainingMs: 60_000, minutes: 5 } });
-    render(<PomodoroPane nextTask={task} />);
+    render(<FocusPane nextTask={task} />);
     fireEvent.click(await screen.findByRole("button", { name: "Back to work" }));
     await waitFor(() => expect(calls.some((c) => c.url === "/api/focus/break" && c.method === "DELETE")).toBe(true));
+  });
+
+  describe("the timebox", () => {
+    const TIMEBOX = { ...SETTINGS, mode: "timebox" as const };
+
+    it("offers the lengths a box comes in, and starts the one chosen rather than the saved default", async () => {
+      const calls = stubFocus({ settings: TIMEBOX });
+      render(<FocusPane nextTask={task} />);
+      // The saved default is where it starts, so both rhythms open on the same number.
+      expect(await screen.findByRole("radio", { name: "25m", checked: true })).toBeTruthy();
+      fireEvent.click(screen.getByRole("radio", { name: "45m" }));
+      fireEvent.click(await screen.findByRole("button", { name: "45m on Write the migration" }));
+      await waitFor(() => expect(calls.some((c) => c.url === "/api/focus" && c.method === "POST")).toBe(true));
+      expect(calls.find((c) => c.method === "POST" && c.url === "/api/focus")!.body).toEqual({ taskId: 4, minutes: 45 });
+    });
+
+    it("offers no break and no cycle: a box ends in a decision, not a rhythm", async () => {
+      stubFocus({ settings: TIMEBOX, completedToday: 3 });
+      render(<FocusPane nextTask={task} />);
+      await screen.findByRole("button", { name: /on Write the migration/ });
+      expect(screen.queryByRole("button", { name: "Break" })).toBeNull();
+      expect(screen.queryByRole("img", { name: /before a long break/ })).toBeNull();
+    });
+
+    it("keeps the box length still while one is running", async () => {
+      stubFocus({
+        settings: TIMEBOX,
+        run: {
+          id: 1,
+          taskId: 4,
+          taskTitle: "Write the migration",
+          startedAt: new Date(Date.now() - 60_000).toISOString(),
+          endedAt: null,
+          plannedMinutes: 45,
+          actualMinutes: null,
+          outcome: null,
+          blockId: null,
+        },
+      });
+      render(<FocusPane nextTask={task} />);
+      await screen.findByText("Focusing");
+      expect(screen.queryByRole("radio")).toBeNull();
+    });
+
+    it("saves the rhythm rather than holding it in the pane, so it is still chosen tomorrow", async () => {
+      const calls = stubFocus({});
+      render(<FocusPane nextTask={task} />);
+      fireEvent.click(await screen.findByRole("button", { name: "timebox" }));
+      await waitFor(() => expect(calls.some((c) => c.url === "/api/settings/focus" && c.method === "PATCH")).toBe(true));
+      expect(calls.find((c) => c.url === "/api/settings/focus")!.body).toEqual({ mode: "timebox" });
+      // Shown straight away rather than after the round trip.
+      expect(await screen.findByRole("radio", { name: "25m" })).toBeTruthy();
+    });
   });
 });
