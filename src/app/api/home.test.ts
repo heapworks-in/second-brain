@@ -24,7 +24,7 @@ describe("home api", () => {
     expect(home.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(home.today).toBe(todayLocal());
     expect(home.day.date).toBe(home.date);
-    expect(home.counts).toEqual({ planned: 0, meetings: 0, inbox: 0 });
+    expect(home.counts).toEqual({ planned: 0, meetings: 0, inbox: 0, desk: 0 });
     expect(home.now).toBeNull();
     expect(home).toMatchObject({ next: [], projects: [], recent: [], activity: null });
     // The Planner's day arrives whole, picker and capacity included.

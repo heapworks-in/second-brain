@@ -9,6 +9,7 @@ import {
   Ruler,
   BookBookmark,
   CalendarCheck,
+  ClipboardText,
   DotsThree,
   Flag,
   House,
@@ -43,6 +44,7 @@ const NARROW = "(max-width: 719px)";
 
 const ICONS: Record<IconName, Glyph> = {
   home: House,
+  desk: ClipboardText,
   planner: CalendarCheck,
   inbox: Tray,
   goal: Target,
@@ -103,6 +105,7 @@ export function Dock() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [dimmed, setDimmed] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
+  const [deskCount, setDeskCount] = useState(0);
   const narrow = useSyncExternalStore(subscribeNarrow, readNarrow, wideOnServer);
   // The capture page is the prompt bar writ large, so the bar stays away there and the pill
   // keeps its place rather than leaving the page with nothing at the bottom.
@@ -132,6 +135,30 @@ export function Dock() {
       cancelled = true;
       clearInterval(id);
       window.removeEventListener("sb:inbox-changed", load);
+    };
+  }, [pathname]);
+
+  // The desk's own count, on the inbox badge's idiom: polled, and refreshed the moment any
+  // surface says the desk changed so the badge never disagrees with the page.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/desk", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { open: number };
+        if (!cancelled) setDeskCount(data.open);
+      } catch {
+        /* offline */
+      }
+    }
+    void load();
+    const id = setInterval(load, POLL_MS);
+    window.addEventListener("sb:desk-changed", load);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      window.removeEventListener("sb:desk-changed", load);
     };
   }, [pathname]);
 
@@ -271,7 +298,7 @@ export function Dock() {
       shortcut: item.shortcut,
       icon: ICONS[item.icon],
       active: isNavActive(pathname, item.href),
-      badge: item.badge === "inbox" && inboxCount > 0 ? inboxCount : undefined,
+      badge: item.badge === "inbox" && inboxCount > 0 ? inboxCount : item.badge === "desk" && deskCount > 0 ? deskCount : undefined,
       dot: item.badge === "activity" && helperDown,
       title: item.badge === "activity" ? status : undefined,
       onClick: sheetOpen ? hideSheet : undefined,

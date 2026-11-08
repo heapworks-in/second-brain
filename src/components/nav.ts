@@ -1,17 +1,20 @@
-export type IconName = "home" | "planner" | "inbox" | "goal" | "review" | "log" | "project" | "area" | "resource" | "people" | "activity" | "library" | "archive" | "search" | "capture" | "help";
+export type IconName = "home" | "planner" | "inbox" | "goal" | "review" | "log" | "project" | "area" | "resource" | "people" | "activity" | "library" | "archive" | "search" | "capture" | "help" | "desk";
 
 export interface NavItem {
   href: string;
   label: string;
   shortcut: string;
   icon: IconName;
-  badge?: "inbox" | "activity";
+  badge?: "inbox" | "activity" | "desk";
   section: "brain" | "tools";
 }
 
 /** Order is the dock order. Every entry has a `g` + letter shortcut. */
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home", shortcut: "g h", icon: "home", section: "brain" },
+  // "desK": `g d` belongs to the Planner, and the desk earns a place beside it — Home is the
+  // quick view of everything, this is where things get decided.
+  { href: "/desk", label: "Desk", shortcut: "g k", icon: "desk", badge: "desk", section: "brain" },
   { href: "/planner", label: "Planner", shortcut: "g d", icon: "planner", section: "brain" },
   { href: "/goals", label: "Goals", shortcut: "g g", icon: "goal", section: "brain" },
   { href: "/review", label: "Review", shortcut: "g w", icon: "review", section: "brain" },

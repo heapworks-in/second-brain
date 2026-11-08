@@ -1,6 +1,7 @@
 import {
   House,
   CalendarCheck,
+  ClipboardList,
   Inbox,
   Target,
   RotateCcw,
@@ -21,6 +22,7 @@ import type { IconName } from "./nav";
 
 const ICONS: Record<IconName, LucideIcon> = {
   home: House,
+  desk: ClipboardList,
   planner: CalendarCheck,
   inbox: Inbox,
   goal: Target,

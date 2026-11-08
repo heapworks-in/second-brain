@@ -1,32 +1,35 @@
-import { and, eq, inArray, isNull, lt, ne } from "drizzle-orm";
-import { containers, items } from "@/db/schema";
-import { ftsSearch } from "@/domain/search/fts";
+import { and, isNull, lt, ne } from "drizzle-orm";
+import { items } from "@/db/schema";
+import { suggestContainersFor } from "@/domain/containers/suggest";
 import { threshold } from "../thresholds";
 import type { Generator } from "../types";
 
 const DAY_MS = 86_400_000;
-/** Enough hits to be sure which container is actually the nearest, few enough to stay one query. */
-const LOOKUP_LIMIT = 8;
 
 /**
  * Something captured a while ago that still has no home.
  *
- * The card only exists if it can name where the thing would go. A proposal that amounts to "this
- * is unfiled, deal with it" is a reminder, not a decision, and the whole point of the desk is
- * that every card can be answered in one press. So the suggestion is found first and the card is
- * skipped when there is none -- which means this generator is quiet on a young database and gets
- * steadily more useful as there is more to be similar to.
+ * The card only exists if it can name where the thing would go. A proposal amounting to "this is
+ * unfiled, deal with it" is a reminder, not a decision, and the point of the desk is that every
+ * card can be answered in one press.
  *
- * Nearness is full-text, not embeddings: generators are synchronous and the embedding provider
- * can be switched off entirely (`SB_EMBED=off`). A desk that empties out when a model is missing
- * would be worse than no desk, and FTS over the chunks is already indexed and already there.
+ * The suggestion is `suggestContainersFor`, the same dull matcher the meeting slice already uses:
+ * a shared word of four or more letters between the title and a project or area's name. An
+ * earlier version of this ranked the chunk index by FTS instead, and against the real database it
+ * confidently offered to file "Mahatma Gandhi's Birthday" into a project called "Task 8
+ * Verification Project" -- because an OR of prefix-matched terms will always find *something*,
+ * and a wrong destination stated confidently is worse than no card at all. Dull and explainable
+ * beats clever and plausible on a surface whose entire value is that you can press the button
+ * without checking.
+ *
+ * It is also provider-free, which generators have to be: synchronous, and no embedding model.
  */
 export const captureUnfiled: Generator = (db, now) => {
   const days = threshold(db, "desk.captureUnfiledDays");
   const cutoff = new Date(now.getTime() - days * DAY_MS).toISOString();
 
   const unfiled = db
-    .select({ id: items.id, title: items.title, type: items.type, createdAt: items.createdAt })
+    .select({ id: items.id, title: items.title, createdAt: items.createdAt })
     .from(items)
     .where(
       and(
@@ -40,28 +43,18 @@ export const captureUnfiled: Generator = (db, now) => {
       ),
     )
     .all();
+  if (unfiled.length === 0) return [];
 
-  return unfiled.flatMap((item) => {
-    // The nearest *filed* item's container. Its own chunks are excluded: a note is always its own
-    // closest match, and it has no container to suggest anyway.
-    const hits = ftsSearch(db, item.title, { limit: LOOKUP_LIMIT });
-    const candidateIds = hits.map((h) => h.itemId).filter((id) => id !== item.id);
-    if (candidateIds.length === 0) return [];
+  // Batched, because `suggestContainersFor` is two queries for the whole list and two per item
+  // if called in a loop -- the shape this repository's reviews keep flagging.
+  const suggestions = suggestContainersFor(
+    db,
+    unfiled.map((item) => ({ title: item.title, attendeeNames: [] })),
+  );
 
-    // One query for every candidate, then walked in the order FTS ranked them: taking whichever
-    // row SQLite happened to return first would throw away the ranking that chose them.
-    const byItem = new Map(
-      db
-        .select({ itemId: items.id, containerId: containers.id, name: containers.name })
-        .from(items)
-        .innerJoin(containers, eq(containers.id, items.containerId))
-        .where(inArray(items.id, candidateIds))
-        .all()
-        .map((r) => [r.itemId, r]),
-    );
-    const suggestion = candidateIds.map((id) => byItem.get(id)).find((hit) => hit !== undefined);
+  return unfiled.flatMap((item, i) => {
+    const suggestion = suggestions[i];
     if (!suggestion) return [];
-
     const age = Math.floor((now.getTime() - Date.parse(item.createdAt)) / DAY_MS);
     return [
       {
@@ -69,9 +62,9 @@ export const captureUnfiled: Generator = (db, now) => {
         source: "item" as const,
         sourceRef: `item:${item.id}`,
         title: item.title,
-        detail: `Captured ${age} days ago, still unfiled. Closest match sits in ${suggestion.name}.`,
-        payload: { itemId: item.id, containerId: suggestion.containerId, containerName: suggestion.name },
-        // Slow: nothing breaks because a note waited another day, and a card that shouts about
+        detail: `Captured ${age} days ago, still unfiled. Looks like ${suggestion.name}.`,
+        payload: { itemId: item.id, containerId: suggestion.id, containerName: suggestion.name },
+        // Slow: nothing breaks because a note waited another day, and a card that shouted about
         // filing would be the first thing anyone learns to dismiss.
         urgency: Math.min(0.6, (age - days) / 60 + 0.1),
       },

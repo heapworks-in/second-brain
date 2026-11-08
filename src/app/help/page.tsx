@@ -9,6 +9,7 @@ interface Shortcut {
 
 const NAV_SHORTCUTS: Shortcut[] = [
   { keys: ["g", "h"], does: "Home" },
+  { keys: ["g", "k"], does: "Desk" },
   { keys: ["g", "d"], does: "Planner" },
   { keys: ["g", "g"], does: "Goals" },
   { keys: ["g", "w"], does: "Weekly Review" },
@@ -100,6 +101,21 @@ export default function HelpPage() {
         <p className="m-0">
           <strong className="text-fg font-medium">Library</strong> is the catalog of everything, filterable by type, status, tag, date,
           or which of the above it&apos;s filed to.
+        </p>
+      </Topic>
+
+      <Topic title="Desk">
+        <p className="m-0">
+          One decision at a time (<Kbd>g</Kbd> <Kbd>k</Kbd>), from things the app already knows but never used to ask about: a meeting
+          starting soon with nothing written against it, a task that has overrun its estimate, a commitment from a meeting that never
+          became a task, a prediction past its date, a capture with no home, a standing call on a recurring meeting that nothing has
+          confirmed in months.
+        </p>
+        <p className="m-0">
+          <Kbd>⏎</Kbd> takes the answer the card names, <Kbd>.</Kbd> puts it off for a week, and <Kbd>n</Kbd> means never — which quietly
+          sinks that whole kind of card down the list, so the desk gets quieter in the shape of your own judgement. Every answer commits
+          at once and offers to undo for eight seconds, and there are never more than seven waiting: a queue you can clear is one you
+          keep clearing.
         </p>
       </Topic>
 

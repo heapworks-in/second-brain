@@ -23,7 +23,9 @@ const NOT_DUE: HomeDTO["review"] = { due: false };
 const NO_MEETING_LOAD: HomeDTO["meetingShare"] = { minutes: 0, workingMinutes: 2700 };
 
 function band(
-  counts: HomeDTO["counts"],
+  // `desk` defaults to nothing, so the cases that predate the desk still read as what they are
+  // about: a clear desk contributes no figure at all.
+  counts: Omit<HomeDTO["counts"], "desk"> & { desk?: number },
   focus: HomeDTO["focus"] = { minutes: 0, running: null },
   review: HomeDTO["review"] = NOT_DUE,
   meetingShare: HomeDTO["meetingShare"] = NO_MEETING_LOAD,
@@ -33,7 +35,7 @@ function band(
   render(
     <TopBand
       day={day()}
-      counts={counts}
+      counts={{ ...counts, desk: counts.desk ?? 0 }}
       focus={focus}
       review={review}
       meetingShare={meetingShare}
@@ -154,5 +156,24 @@ describe("the week line's calls to score", () => {
   it("says nothing when none is overdue", () => {
     band({ planned: 0, meetings: 0, inbox: 0 }, undefined, undefined, undefined, [], 0);
     expect(screen.queryByText(/to score/)).toBeNull();
+  });
+});
+
+describe("the desk", () => {
+  it("carries one line to the desk when something is waiting there", () => {
+    band({ planned: 0, meetings: 0, inbox: 0, desk: 3 });
+    const link = screen.getByRole("link", { name: "3 on the desk" });
+    expect(link.getAttribute("href")).toBe("/desk");
+  });
+
+  /** A clear desk is not a figure, it is the absence of one. */
+  it("says nothing at all about a clear desk", () => {
+    band({ planned: 0, meetings: 0, inbox: 0, desk: 0 });
+    expect(screen.queryByText(/on the desk/)).toBeNull();
+  });
+
+  it("never shows the cards themselves: Home points at the desk, it is not the desk", () => {
+    band({ planned: 0, meetings: 0, inbox: 0, desk: 2 });
+    expect(screen.queryByRole("button", { name: /Reaffirm|Re-estimate|File it/ })).toBeNull();
   });
 });

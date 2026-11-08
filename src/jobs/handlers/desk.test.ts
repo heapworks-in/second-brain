@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { makeTestDb, type TestDb } from "@/test/db";
-import { calendarEvents, proposals } from "@/db/schema";
+import { calendarEvents, proposals, type Job } from "@/db/schema";
 import { createDeskHandler } from "./desk";
 
 let t: TestDb;
@@ -10,14 +10,25 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** A job row is all the handler is given; the sweep reads its own clock. */
-const JOB = { id: 1, type: "desk" as const, payload: "{}", status: "running" as const, attempts: 1, error: null, itemId: null, createdAt: "", startedAt: null, finishedAt: null };
+/** A job row is all the handler is given; the sweep reads its own clock and its own tables. */
+const JOB: Job = {
+  id: 1,
+  type: "desk",
+  payload: "{}",
+  status: "running",
+  attempts: 1,
+  error: null,
+  itemId: null,
+  runAfter: "2026-11-08T09:00:00.000Z",
+  createdAt: "2026-11-08T09:00:00.000Z",
+  updatedAt: "2026-11-08T09:00:00.000Z",
+};
 
 describe("the desk sweep", () => {
   it("does nothing and says nothing on an empty database", async () => {
     t = makeTestDb();
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    await createDeskHandler({ db: t.db })(JOB, t.db);
+    await createDeskHandler({ db: t.db })(JOB);
     expect(t.db.select().from(proposals).all()).toHaveLength(0);
     expect(log).not.toHaveBeenCalled();
   });
@@ -39,7 +50,7 @@ describe("the desk sweep", () => {
       })
       .run();
 
-    await createDeskHandler({ db: t.db })(JOB, t.db);
+    await createDeskHandler({ db: t.db })(JOB);
 
     const filed = t.db.select().from(proposals).where(eq(proposals.kind, "meeting_unprepared")).all();
     expect(filed).toHaveLength(1);
@@ -64,8 +75,8 @@ describe("the desk sweep", () => {
       .run();
 
     const handler = createDeskHandler({ db: t.db });
-    await handler(JOB, t.db);
-    await handler(JOB, t.db);
+    await handler(JOB);
+    await handler(JOB);
     expect(t.db.select().from(proposals).all()).toHaveLength(1);
   });
 });

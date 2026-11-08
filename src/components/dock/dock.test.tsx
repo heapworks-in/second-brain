@@ -10,13 +10,14 @@ const route = vi.hoisted(() => ({ path: "/inbox" }));
 vi.mock("next/navigation", () => ({ usePathname: () => route.path, useRouter: () => ({ push }) }));
 
 const FIELD = "Ask, capture, or add a task";
-const ROWS = ["Home", "Planner", "Goals", "Review", "Log", "Inbox, 3 waiting", "Projects", "Areas", "Resources", "People", "Activity", "Library", "Archive", "Help", "Search", "Capture"];
+const ROWS = ["Home", "Desk, 2 waiting", "Planner", "Goals", "Review", "Log", "Inbox, 3 waiting", "Projects", "Areas", "Resources", "People", "Activity", "Library", "Archive", "Help", "Search", "Capture"];
 
 /** The polls the dock inherited from the sidebar, plus capture and the link it watches. */
 function stubFetch(itemStatus = "pending") {
   const fn = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.startsWith("/api/inbox")) return Response.json({ count: 3 });
+    if (url === "/api/desk") return Response.json({ proposals: [], open: 2, decidedToday: 0 });
     if (url.startsWith("/api/activity/status")) return Response.json({ helper: { lastSeen: new Date().toISOString() }, paused: false });
     if (/^\/api\/items\/\d+$/.test(url)) return Response.json({ id: 5, status: itemStatus });
     if (url === "/api/items") return Response.json({ id: 12, type: "note", title: "Buy milk" }, { status: 201 });
@@ -202,6 +203,7 @@ describe("Dock", () => {
     const sheet = screen.getByRole("list", { name: "More views" });
     expect(Array.from(sheet.querySelectorAll("a")).map((a) => a.textContent)).toEqual([
       expect.stringContaining("Home"),
+      expect.stringContaining("Desk"),
       expect.stringContaining("Goals"),
       expect.stringContaining("Review"),
       expect.stringContaining("Log"),

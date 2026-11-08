@@ -457,7 +457,7 @@ export interface HomeDTO {
    * first client render rather than drifting between them. */
   generatedAt: string;
   day: PlannerDayDTO;
-  counts: { planned: number; meetings: number; inbox: number };
+  counts: { planned: number; meetings: number; inbox: number; desk: number };
   now: HomeItemDTO | null;
   /** Up to two, in start order, never the one `now` holds. */
   next: HomeItemDTO[];

@@ -19,6 +19,9 @@ function figures(counts: HomeDTO["counts"]): { href: string; label: string }[] {
     { href: "/planner", label: figure(counts.planned, `${counts.planned} planned`, "Nothing planned") },
     { href: "/planner/meetings", label: figure(counts.meetings, count(counts.meetings, "meeting"), "No meetings") },
     { href: "/inbox", label: figure(counts.inbox, `${counts.inbox} in the inbox`, "Inbox clear") },
+    // One line, never the cards themselves. Zero drops off entirely rather than reading "Desk
+    // clear" beside four other figures: a clear desk is not a figure, it is the absence of one.
+    ...(counts.desk > 0 ? [{ href: "/desk", label: `${counts.desk} on the desk` }] : []),
   ];
 }
 

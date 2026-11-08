@@ -5,6 +5,7 @@ import { addDays, getDay, getHelperState, localDay, topApps } from "@/domain/act
 import { listBlocks } from "@/domain/blocks";
 import { listContainers } from "@/domain/containers";
 import { countInbox, listItems, parseMeta } from "@/domain/items";
+import { deskPayload } from "@/domain/desk";
 import { containerProgress, getTask } from "@/domain/tasks";
 import { focusSummary, runningFocus } from "@/domain/focus";
 import { getReview } from "@/domain/review";
@@ -227,6 +228,10 @@ export function homePayload(db: DB, now: Date): HomeDTO {
       meetings: day.meetings.filter((m) => !m.allDay && m.status !== "declined").length,
       // The dock's badge count, called rather than counted again.
       inbox: countInbox(db),
+      // Home says how many decisions are waiting and nothing else about them: the desk is a
+      // place you go to, and a card answered from here would make Home the deciding surface
+      // that `/desk` exists to be instead.
+      desk: deskPayload(db, now).open,
     },
     now: current,
     next,

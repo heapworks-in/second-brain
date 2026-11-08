@@ -62,7 +62,7 @@ describe("homePayload", () => {
     const home = homePayload(t.db, NOW);
     expect(home.date).toBe(DATE);
     expect(home.today).toBe(DATE);
-    expect(home.counts).toEqual({ planned: 1, meetings: 1, inbox: 2 });
+    expect(home.counts).toEqual({ planned: 1, meetings: 1, inbox: 2, desk: 0 });
     // The Planner's own day, reused whole rather than rebuilt.
     expect(home.day.date).toBe(DATE);
     expect(home.day.plan.map((p) => p.id).sort()).toEqual([a.id, b.id].sort());

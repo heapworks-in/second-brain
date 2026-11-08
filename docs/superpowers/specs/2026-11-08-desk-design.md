@@ -51,7 +51,7 @@ Each is a pure, synchronous function `(db, now) => ProposalDraft[]` in `src/doma
 | `task_overrun` | an open task's focus minutes exceed its estimate by more than half | re-estimates to the minutes actually spent, rounded to the nearest quarter hour |
 | `task_stalled` | a task has been planned on 3+ distinct days with zero focus minutes | unplans it |
 | `prediction_due` | a prediction is past its resolve-by date | opens the resolve step |
-| `capture_unfiled` | an inbox item is older than 7 days with no container | files it into the container of the closest existing item by FTS, named in the card |
+| `capture_unfiled` | an inbox item is older than 7 days with no container | files it into the project or area whose name shares a real word with its title (`suggestContainersFor`), named in the card |
 | `commitment_unbooked` | a meeting action item has no task | creates the task, linked to the meeting |
 
 `decision_stale` needs two new columns on `meeting_series_decisions` (`lastVerified`, `confidence`) — the one schema change outside `proposals`. The pattern is lifted from COG-second-brain's `memory-hygiene`: trust is a property of the last check, not of the record, and nothing is ever deleted on the app's own initiative. Fully obsolete entries are proposed for archive, which here means a dismissed proposal and a note, never a `DELETE`.
