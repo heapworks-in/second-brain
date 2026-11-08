@@ -1,4 +1,4 @@
-export type IconName = "home" | "planner" | "inbox" | "goal" | "review" | "log" | "project" | "area" | "resource" | "people" | "activity" | "library" | "archive" | "search" | "capture" | "help" | "desk";
+export type IconName = "home" | "planner" | "inbox" | "goal" | "review" | "log" | "project" | "area" | "resource" | "people" | "activity" | "library" | "archive" | "search" | "capture" | "help" | "desk" | "settings";
 
 export interface NavItem {
   href: string;
@@ -27,6 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/activity", label: "Activity", shortcut: "g t", icon: "activity", badge: "activity", section: "tools" },
   { href: "/library", label: "Library", shortcut: "g l", icon: "library", section: "tools" },
   { href: "/archive", label: "Archive", shortcut: "g x", icon: "archive", section: "tools" },
+  { href: "/settings", label: "Settings", shortcut: "g ,", icon: "settings", section: "tools" },
   { href: "/help", label: "Help", shortcut: "g u", icon: "help", section: "tools" },
 ];
 

@@ -4,17 +4,15 @@ import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Settings2 } from "lucide-react";
-import type { MeetingListDTO, MeetingSettingsDTO } from "@/lib/dto";
+import type { MeetingListDTO } from "@/lib/dto";
 import type { MeetingDecision } from "@/db/enums";
 import { formatDayHeading, todayLocal } from "../activity/format";
-import { Button, Chip, IconButton, Input, List } from "../ui";
+import { Button, Chip, Input, List } from "../ui";
 import { MeetingRow } from "./meeting-row";
 import { openMeeting } from "./open-meeting";
 import { useRecorder } from "./use-recorder";
-import { CalendarFeed } from "./calendar-feed";
 
 const JSON_HEADERS = { "content-type": "application/json" };
-const SETTINGS_URL = "/api/settings/meetings";
 
 interface Props {
   today: string;
@@ -83,7 +81,6 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
   // trade, not a bug.
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<number>>(new Set());
   // Null until the server has answered: a switch that renders before then would render a guess.
-  const [settings, setSettings] = useState<MeetingSettingsDTO | null>(null);
   // Just the names, for the attribution chip's label. The meeting payload carries `containerId`
   // but not what it is called, and widening it would mean a new field on every meeting fixture in
   // the suite for a string this one control uses. Same list the picker itself reads.
@@ -102,7 +99,6 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
   }, []);
   // The switches and the feed link live behind one control; with no meetings at all the panel
   // opens on its own, since connecting a calendar is then the only thing to do here.
-  const [settingsOpen, setSettingsOpen] = useState(meetings.length === 0);
   // Design §5 names two states -- "everything" and "only the ones you are not going to" -- and
   // Step 7 separately wants declined meetings out of the way by default; a meeting decided
   // not-going stays in the record forever (nothing here ever deletes or archives it), so a third,
@@ -110,23 +106,6 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
   // named states: not-going hidden, without narrowing down to only not-going either.
   const [filter, setFilter] = useState<MeetingFilter>("default");
   const recorder = useRecorder();
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(SETTINGS_URL, { cache: "no-store" });
-        if (!res.ok || cancelled) return;
-        const next = (await res.json()) as MeetingSettingsDTO;
-        if (!cancelled) setSettings(next);
-      } catch {
-        /* offline: the switches stay out of the way rather than lying about the setting */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // A project scope, when one is given, narrows the whole window down before search or the
   // decision filter ever see it -- the same list every other control here already works from,
@@ -229,22 +208,6 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
     });
   }
 
-  /** Moves the switch under the hand straight away; the answer is what it settles on. */
-  function saveSetting(patch: Partial<MeetingSettingsDTO>) {
-    const before = settings;
-    setSettings((current) => (current ? { ...current, ...patch } : current));
-    void (async () => {
-      const res = await fetch(SETTINGS_URL, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(patch) }).catch(() => null);
-      if (!res || !res.ok) {
-        // The switch goes back to what is actually saved, so the next click patches from the truth.
-        setSettings(before);
-        setError("Could not save that change");
-        return;
-      }
-      setSettings((await res.json()) as MeetingSettingsDTO);
-      setError(null);
-    })();
-  }
 
   /** The offer band under an uncontained meeting's row: "Looks like <container>?" with an
    * accept and a dismiss, and nothing else -- an offer, never an assignment. Nothing renders
@@ -344,14 +307,12 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
           onChange={(e) => setQuery(e.target.value)}
           className="max-w-[320px]"
         />
-        <IconButton
-          label="Calendar settings"
-          icon={Settings2}
-          active={settingsOpen}
-          aria-expanded={settingsOpen}
-          aria-controls="calendar-settings"
-          onClick={() => setSettingsOpen((v) => !v)}
-        />
+        {/* The calendar link, the auto-record switches and audio retention all live on
+            `/settings` now: they are standing policy rather than something to change while
+            reading today's meetings, and they used to be findable only behind this gear. */}
+        <Link href="/settings" aria-label="Calendar settings" title="Calendar settings" className="focus-ring rounded-sm text-fg-faint hover:text-fg p-1">
+          <Settings2 className="w-4 h-4" aria-hidden />
+        </Link>
         <div role="group" aria-label="Filter meetings" className="flex items-center gap-1">
           {FILTERS.map((f) => (
             <Chip key={f.key} active={filter === f.key} aria-pressed={filter === f.key} onClick={() => setFilter(f.key)} className="h-6 px-2 text-[11.5px]">
@@ -373,77 +334,17 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
         </span>
       </div>
 
-      {settingsOpen && (
-        <section id="calendar-settings" aria-label="Calendar settings" className="pane p-3 flex flex-col gap-3">
-          {settings && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Chip
-                role="switch"
-                aria-checked={settings.autoRecord}
-                active={settings.autoRecord}
-                onClick={() => saveSetting({ autoRecord: !settings.autoRecord })}
-              >
-                Record meetings automatically
-              </Chip>
-              {settings.autoRecord && (
-                <Chip
-                  role="switch"
-                  aria-checked={settings.autoRecordNeedsCallLink}
-                  active={settings.autoRecordNeedsCallLink}
-                  onClick={() => saveSetting({ autoRecordNeedsCallLink: !settings.autoRecordNeedsCallLink })}
-                  className="h-6 px-2 text-[11.5px]"
-                  title="A Zoom, Teams, Meet or Webex link. Anything else still records when you press Record."
-                >
-                  Only video calls
-                </Chip>
-              )}
-            </div>
-          )}
-          {/* Design §9.2: 0 releases as soon as a transcript exists, 1-365 keeps that many days
-              past the recording's end, and "keep forever" turns the window off entirely. */}
-          {settings && settings.audioRetentionDays !== undefined && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[12px] text-fg-faint">Audio retention</span>
-              {settings.audioRetentionDays !== null && (
-                <>
-                  <div className="w-16">
-                    <Input
-                      key={settings.audioRetentionDays}
-                      size="sm"
-                      type="number"
-                      min={0}
-                      max={365}
-                      aria-label="Audio retention, in days"
-                      defaultValue={settings.audioRetentionDays}
-                      onBlur={(e) => {
-                        // `Number("")` is 0, not "unset" — an emptied field must not silently
-                        // save as "release the audio the moment a transcript exists", the most
-                        // destructive value the setting can take. A blank or non-numeric field
-                        // reverts to what was last saved rather than committing anything.
-                        const raw = e.target.value.trim();
-                        const n = Number(raw);
-                        if (raw !== "" && Number.isInteger(n) && n >= 0 && n <= 365) saveSetting({ audioRetentionDays: n });
-                        else e.target.value = String(settings.audioRetentionDays);
-                      }}
-                      className="w-full"
-                    />
-                  </div>
-                  <span className="text-[12px] text-fg-faint">days</span>
-                </>
-              )}
-              <Chip
-                role="switch"
-                aria-checked={settings.audioRetentionDays === null}
-                active={settings.audioRetentionDays === null}
-                onClick={() => saveSetting({ audioRetentionDays: settings.audioRetentionDays === null ? 7 : null })}
-                className="h-6 px-2 text-[11.5px]"
-              >
-                Keep forever
-              </Chip>
-            </div>
-          )}
-          <CalendarFeed onSynced={onRefresh} />
-        </section>
+      {/* With no calendar connected there is nothing to list and nothing here explains that,
+          so the one line that does points at the place that can fix it. Every surface that
+          reports a missing dependency has to offer the way to supply it. */}
+      {meetings.length === 0 && (
+        <p className="m-0 text-[12.5px] text-fg-muted">
+          No meetings in this window.{" "}
+          <a href="/settings" className="focus-ring rounded-sm underline hover:text-fg">
+            Connect a calendar in Settings
+          </a>
+          .
+        </p>
       )}
 
       {/* With nothing to group, the groups are all empty lines saying the same thing: one line

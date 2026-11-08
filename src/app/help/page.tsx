@@ -10,6 +10,7 @@ interface Shortcut {
 const NAV_SHORTCUTS: Shortcut[] = [
   { keys: ["g", "h"], does: "Home" },
   { keys: ["g", "k"], does: "Desk" },
+  { keys: ["g", ","], does: "Settings" },
   { keys: ["g", "d"], does: "Planner" },
   { keys: ["g", "g"], does: "Goals" },
   { keys: ["g", "w"], does: "Weekly Review" },

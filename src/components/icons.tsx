@@ -16,6 +16,7 @@ import {
   Search,
   Plus,
   CircleHelp,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import type { IconName } from "./nav";
@@ -23,6 +24,7 @@ import type { IconName } from "./nav";
 const ICONS: Record<IconName, LucideIcon> = {
   home: House,
   desk: ClipboardList,
+  settings: Settings,
   planner: CalendarCheck,
   inbox: Inbox,
   goal: Target,

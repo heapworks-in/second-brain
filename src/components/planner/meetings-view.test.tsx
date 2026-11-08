@@ -89,11 +89,6 @@ function stubSettings(initial: MeetingSettingsDTO) {
   return fn;
 }
 
-/** The switches and the feed link sit behind the gear once there are meetings on screen. */
-function openSettings() {
-  fireEvent.click(screen.getByRole("button", { name: "Calendar settings" }));
-}
-
 /** By test id, not by role: the past group's rows sit inside a closed `details`. */
 function titles(): string[] {
   return screen.getAllByTestId("meeting-title").map((el) => el.textContent ?? "");
@@ -215,118 +210,12 @@ describe("MeetingsView", () => {
     expect(record.hasAttribute("disabled")).toBe(false);
   });
 
-  it("keeps the switches off screen until the settings answer, rather than guessing at them", async () => {
-    stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true });
-    mount();
-    openSettings();
-    expect(screen.queryByRole("switch", { name: "Record meetings automatically" })).toBeNull();
-
-    const auto = await screen.findByRole("switch", { name: "Record meetings automatically" });
-    expect(auto.getAttribute("aria-checked")).toBe("false");
-    // The join-link rule only means something once meetings record themselves.
-    expect(screen.queryByRole("switch", { name: "Only video calls" })).toBeNull();
-  });
-
-  it("saves each switch as it is flipped", async () => {
-    const fetchMock = stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true });
-    mount();
-    openSettings();
-    const auto = await screen.findByRole("switch", { name: "Record meetings automatically" });
-
-    fireEvent.click(auto);
-    await waitFor(() => expect(auto.getAttribute("aria-checked")).toBe("true"));
-    const patch = fetchMock.mock.calls.find(([url, init]) => String(url) === "/api/settings/meetings" && init?.method === "PATCH");
-    expect(JSON.parse(String(patch![1]?.body))).toEqual({ autoRecord: true });
-
-    const link = screen.getByRole("switch", { name: "Only video calls" });
-    expect(link.getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(link);
-    await waitFor(() => expect(link.getAttribute("aria-checked")).toBe("false"));
-    const last = fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH").at(-1);
-    expect(JSON.parse(String(last![1]?.body))).toEqual({ autoRecordNeedsCallLink: false });
-  });
-
-  it("shows the audio retention window once settings answer, and saves a new day count on blur", async () => {
-    const fetchMock = stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true, audioRetentionDays: 7 });
-    mount();
-    openSettings();
-
-    const days = await screen.findByRole("spinbutton", { name: "Audio retention, in days" });
-    expect((days as HTMLInputElement).value).toBe("7");
-
-    fireEvent.change(days, { target: { value: "30" } });
-    fireEvent.blur(days);
-    await waitFor(() => {
-      const patch = fetchMock.mock.calls.find(([url, init]) => String(url) === "/api/settings/meetings" && init?.method === "PATCH");
-      expect(JSON.parse(String(patch![1]?.body))).toEqual({ audioRetentionDays: 30 });
-    });
-  });
-
-  it("does not save an emptied retention field as 0, the most destructive value", async () => {
-    // `Number("")` is 0, and 0 means "release the audio the moment a transcript exists" — the
-    // exact opposite of what clearing a field to look at it means. A blank field must revert to
-    // what was saved, not commit anything.
-    const fetchMock = stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true, audioRetentionDays: 7 });
-    mount();
-    openSettings();
-
-    const days = (await screen.findByRole("spinbutton", { name: "Audio retention, in days" })) as HTMLInputElement;
-    fireEvent.change(days, { target: { value: "" } });
-    fireEvent.blur(days);
-
-    // Give any stray save a tick to land before asserting none did.
-    await new Promise((r) => setTimeout(r, 0));
-    const patch = fetchMock.mock.calls.find(([url, init]) => String(url) === "/api/settings/meetings" && init?.method === "PATCH");
-    expect(patch).toBeUndefined();
-    expect(days.value).toBe("7");
-  });
-
-  it("switches the audio retention window to keep forever, and back", async () => {
-    const fetchMock = stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true, audioRetentionDays: 7 });
-    mount();
-    openSettings();
-
-    const forever = await screen.findByRole("switch", { name: "Keep forever" });
-    expect(forever.getAttribute("aria-checked")).toBe("false");
-
-    fireEvent.click(forever);
-    await waitFor(() => expect(forever.getAttribute("aria-checked")).toBe("true"));
-    expect(screen.queryByRole("spinbutton", { name: "Audio retention, in days" })).toBeNull();
-    let patch = fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH").at(-1);
-    expect(JSON.parse(String(patch![1]?.body))).toEqual({ audioRetentionDays: null });
-
-    fireEvent.click(forever);
-    await waitFor(() => expect(forever.getAttribute("aria-checked")).toBe("false"));
-    patch = fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH").at(-1);
-    expect(JSON.parse(String(patch![1]?.body))).toEqual({ audioRetentionDays: 7 });
-  });
-
-  it("does not render the audio retention control before settings have answered", () => {
-    stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true, audioRetentionDays: 7 });
-    mount();
-    openSettings();
-    expect(screen.queryByRole("spinbutton", { name: "Audio retention, in days" })).toBeNull();
-  });
-
   it("keeps record out of reach while another meeting is recording", async () => {
     stubRecorder({ state: "recording", itemId: 4, title: "Retro", startedAt: new Date().toISOString(), missing: [] });
     mount();
     const record = screen.getByRole("button", { name: "Record now" });
     await waitFor(() => expect(record.getAttribute("title")).toBe("A recording is already running"));
     expect(record.hasAttribute("disabled")).toBe(true);
-  });
-
-  it("keeps the calendar settings behind the gear while there are meetings, and opens them when there are none", async () => {
-    stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true });
-    mount();
-    expect(screen.queryByRole("region", { name: "Calendar settings" })).toBeNull();
-    openSettings();
-    expect(screen.getByRole("region", { name: "Calendar settings" })).toBeTruthy();
-    expect(await screen.findByLabelText("Published calendar link")).toBeTruthy();
-    cleanup();
-    stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true });
-    render(<MeetingsView today={TODAY} meetings={[]} />);
-    expect(screen.getByRole("region", { name: "Calendar settings" })).toBeTruthy();
   });
 
   it("lists an all-day event as a chip with nothing to record or join", async () => {

@@ -16,6 +16,7 @@ import {
   ListBullets,
   MagnifyingGlass,
   Plus,
+  Gear,
   Pulse,
   Question,
   Stack,
@@ -45,6 +46,7 @@ const NARROW = "(max-width: 719px)";
 const ICONS: Record<IconName, Glyph> = {
   home: House,
   desk: ClipboardText,
+  settings: Gear,
   planner: CalendarCheck,
   inbox: Tray,
   goal: Target,
