@@ -73,12 +73,12 @@ One transaction, one pass. No generator writes directly.
 Deliberately arithmetic, not a model:
 
 ```
-rank = urgency * weight(kind) * (1 - dismissRate(kind))
+rank = urgency * weight(kind) * (1 - 0.9 * dismissRate(kind))
 ```
 
 - `urgency` — time pressure normalised to 0..1: hours until the meeting, days past the resolve-by date, days since the capture landed. Each generator supplies its own.
 - `weight(kind)` — a constant per kind in `settings`, so you can mute a whole class without code. The generators' own thresholds (90 days for a stale decision, 7 for an unfiled capture, 3 planned days for a stalled task) live beside it for the same reason.
-- `dismissRate(kind)` — dismissed over decided across the last 30 proposals of that kind. Three counts in SQL. A kind you have refused nine times in a row sinks; one you always accept rises.
+- `dismissRate(kind)` — dismissed over decided across the last 30 proposals of that kind; expiry is not a decision and is not counted. A kind you have refused nine times in a row sinks; one you always accept rises. The `0.9` is a floor: at a rate of 1 a bare `(1 - rate)` reaches zero and takes urgency with it, so two refused kinds tie at nothing and the only route back up is a decision the desk would never again offer. A tenth of the weight keeps a refused kind sorted by its own urgency at the bottom, and lets one acceptance lift it straight out. Muting a kind outright stays a deliberate setting, not something nine impatient dismissals do by accident.
 
 Top seven by rank are `open` and shown; the rest wait. The list does not re-sort while you work it — `rank` is stored, and a re-rank happens on sweep.
 
