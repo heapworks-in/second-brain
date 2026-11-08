@@ -18,10 +18,12 @@ import {
   FOCUS_OUTCOMES,
   PREDICTION_KINDS,
   PREDICTION_UNITS,
+  PROPOSAL_KINDS,
+  PROPOSAL_STATES,
 } from "./enums";
 
-export { ITEM_TYPES, ITEM_STATUSES, JOB_TYPES, JOB_STATUSES, CONTAINER_KINDS, CONTAINER_STATUSES, RESOURCE_CATEGORIES, TASK_STATUSES, TASK_PRIORITIES, MEETING_STATUSES, MEETING_DECISIONS, CALENDAR_SOURCES, GOAL_HORIZONS, GOAL_STATUSES, FOCUS_OUTCOMES, PREDICTION_KINDS, PREDICTION_UNITS } from "./enums";
-export type { ItemType, ItemStatus, JobType, JobStatus, ContainerKind, ContainerStatus, ResourceCategory, TaskStatus, TaskPriority, MeetingStatus, MeetingDecision, CalendarSource, GoalHorizon, GoalStatus, FocusOutcome, PredictionKind, PredictionUnit } from "./enums";
+export { ITEM_TYPES, ITEM_STATUSES, JOB_TYPES, JOB_STATUSES, CONTAINER_KINDS, CONTAINER_STATUSES, RESOURCE_CATEGORIES, TASK_STATUSES, TASK_PRIORITIES, MEETING_STATUSES, MEETING_DECISIONS, CALENDAR_SOURCES, GOAL_HORIZONS, GOAL_STATUSES, FOCUS_OUTCOMES, PREDICTION_KINDS, PREDICTION_UNITS, PROPOSAL_KINDS, PROPOSAL_STATES } from "./enums";
+export type { ItemType, ItemStatus, JobType, JobStatus, ContainerKind, ContainerStatus, ResourceCategory, TaskStatus, TaskPriority, MeetingStatus, MeetingDecision, CalendarSource, GoalHorizon, GoalStatus, FocusOutcome, PredictionKind, PredictionUnit, ProposalKind, ProposalState } from "./enums";
 
 export const containers = sqliteTable(
   "containers",
@@ -265,6 +267,14 @@ export const meetingSeriesDecisions = sqliteTable("meeting_series_decisions", {
   decision: text("decision", { enum: MEETING_DECISIONS }).notNull(),
   note: text("note").notNull().default(""),
   decidedAt: text("decided_at").notNull(),
+  /** When this standing call was last confirmed as still right, which is not when it was made:
+   * trust is a property of the last check, not of the record. Null until something reaffirms it,
+   * and `decidedAt` is the fallback -- a decision never checked is as old as the day it was taken.
+   * Read by the desk's `decision_stale` generator; nothing else needs it yet. */
+  lastVerified: text("last_verified"),
+  /** 0..1, how sure the last check was. Written beside `lastVerified` and never inferred: a
+   * confidence the machine made up is worse than none, because it reads as evidence. */
+  confidence: real("confidence"),
 });
 export type MeetingSeriesDecision = typeof meetingSeriesDecisions.$inferSelect;
 
@@ -513,3 +523,48 @@ export const predictions = sqliteTable(
   ],
 );
 export type Prediction = typeof predictions.$inferSelect;
+
+/**
+ * One thing that wants a decision, filled by the desk sweep from data the app already holds.
+ *
+ * `sourceRef` is a string and deliberately not a relation. A proposal has to outlive the row
+ * that caused it: a dismissed `decision_stale` must stay dismissed after the decision is edited,
+ * and deleting a task must not cascade away the record that somebody was asked about it. The
+ * unique index on `(kind, source_ref)` is what makes the sweep idempotent -- it is how a re-run
+ * finds the row it filed last time instead of filing a second one.
+ *
+ * `payload` carries everything accepting commits, so no commit re-derives anything from a world
+ * that has moved on since. A generator that cannot say exactly what accept will do has no
+ * business filing a proposal.
+ *
+ * `rank` is stored rather than computed per read, so the list cannot re-sort itself while
+ * somebody is working down it. It moves on the next sweep.
+ */
+export const proposals = sqliteTable(
+  "proposals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    kind: text("kind", { enum: PROPOSAL_KINDS }).notNull(),
+    /** Which table the evidence came from: "meeting" | "decision" | "task" | "prediction" | "item". */
+    source: text("source").notNull(),
+    sourceRef: text("source_ref").notNull(),
+    /** The one line that gets read. */
+    title: text("title").notNull(),
+    /** The evidence, a line or two. Never advice: the buttons are the advice. */
+    detail: text("detail").notNull().default(""),
+    payload: text("payload").notNull().default("{}"),
+    rank: real("rank").notNull().default(0),
+    state: text("state", { enum: PROPOSAL_STATES }).notNull().default("open"),
+    snoozedUntil: text("snoozed_until"),
+    createdAt: text("created_at").notNull(),
+    decidedAt: text("decided_at"),
+  },
+  (t) => [
+    uniqueIndex("proposals_kind_ref_idx").on(t.kind, t.sourceRef),
+    // The page's only query: what is open, best first.
+    index("proposals_state_rank_idx").on(t.state, t.rank),
+    // `dismissRate` reads the last N decided of one kind, newest first.
+    index("proposals_kind_decided_idx").on(t.kind, t.decidedAt),
+  ],
+);
+export type Proposal = typeof proposals.$inferSelect;

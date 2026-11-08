@@ -14,6 +14,7 @@ export const JOB_TYPES = [
   "embed",
   "weekly_reflect",
   "backup",
+  "desk",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
@@ -97,3 +98,23 @@ export type PredictionUnit = (typeof PREDICTION_UNITS)[number];
  */
 export const FOCUS_MODES = ["pomodoro", "timebox"] as const;
 export type FocusMode = (typeof FOCUS_MODES)[number];
+
+/** What a proposal is about, which decides what accepting it commits. One per generator. */
+export const PROPOSAL_KINDS = [
+  "meeting_unprepared",
+  "decision_stale",
+  "task_overrun",
+  "task_stalled",
+  "prediction_due",
+  "capture_unfiled",
+  "commitment_unbooked",
+] as const;
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
+
+/**
+ * `expired` is the state that keeps the desk clearable: a proposal whose condition resolved
+ * itself -- the meeting happened, the task got worked -- leaves on its own rather than waiting
+ * to be dismissed. `dismissed` is a judgement and is never set by a sweep.
+ */
+export const PROPOSAL_STATES = ["open", "accepted", "dismissed", "snoozed", "expired"] as const;
+export type ProposalState = (typeof PROPOSAL_STATES)[number];
