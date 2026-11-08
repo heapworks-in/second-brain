@@ -9,8 +9,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const EMPTY: CalendarFeedDTO = { feedUrl: "", syncedAt: null, error: null, count: 0, outlook: { enabled: false, available: false, syncedAt: null, error: null, count: 0, stored: 0 } };
-const LINKED: CalendarFeedDTO = { feedUrl: "https://example.com/cal.ics", syncedAt: "2026-09-23T06:00:00.000Z", error: null, count: 7, outlook: { enabled: false, available: false, syncedAt: null, error: null, count: 0, stored: 0 } };
+const EMPTY: CalendarFeedDTO = { feedUrl: "", syncedAt: null, error: null, count: 0 };
+const LINKED: CalendarFeedDTO = { feedUrl: "https://example.com/cal.ics", syncedAt: "2026-09-23T06:00:00.000Z", error: null, count: 7 };
 
 function stub(initial: CalendarFeedDTO, answer: (url: string, init?: RequestInit) => Response) {
   const calls: { url: string; init?: RequestInit }[] = [];

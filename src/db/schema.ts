@@ -248,7 +248,7 @@ export const calendarEvents = sqliteTable(
  * occurrence that happened before someone got around to labelling the series.
  *
  * It also has to live outside `calendarEvents` to survive: a sync deletes rows that fall out of
- * its window (the Outlook widget cache only holds a short span), so an assignment stored per-row
+ * its window (a published feed only carries a short span), so an assignment stored per-row
  * would quietly disappear as meetings age out and come back unattributed.
  */
 export const meetingSeriesContainers = sqliteTable("meeting_series_containers", {

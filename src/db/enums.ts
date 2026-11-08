@@ -38,7 +38,7 @@ export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 export const MEETING_STATUSES = ["accepted", "tentative", "declined", "none"] as const;
 export type MeetingStatus = (typeof MEETING_STATUSES)[number];
 
-export const CALENDAR_SOURCES = ["eventkit", "feed", "outlook"] as const;
+export const CALENDAR_SOURCES = ["eventkit", "feed"] as const;
 export type CalendarSource = (typeof CALENDAR_SOURCES)[number];
 
 /** The local, person-made call on a meeting — never the calendar's own RSVP, and never inferred

@@ -51,7 +51,7 @@ describe("meeting attribution", () => {
         day: "2026-09-10",
         attendees: 0,
         hasCallLink: 0,
-        source: "outlook",
+        source: "feed",
         ...over,
       })
       .returning({ id: calendarEvents.id })
@@ -209,7 +209,7 @@ describe("captured-item fallback", () => {
         day: "2026-09-10",
         attendees: 0,
         hasCallLink: 0,
-        source: "outlook",
+        source: "feed",
         itemId: item.id,
       })
       .returning({ id: calendarEvents.id })

@@ -289,23 +289,6 @@ export interface CalendarFeedDTO {
   count: number;
   /** Present on the answers to a save or a "Sync now". */
   sync?: { state: "off" } | { state: "ok"; count: number; syncedAt: string } | { state: "error"; error: string };
-  outlook: OutlookSourceDTO;
-  /** Present on the answer to switching Outlook on. */
-  outlookSync?: { state: "off" } | { state: "ok"; count: number; syncedAt: string } | { state: "error"; error: string };
-  /** How many rows switching Outlook off deleted. */
-  removed?: number;
-}
-
-/** The local Outlook app as a calendar source, read from its Calendar widget's own cache. */
-export interface OutlookSourceDTO {
-  enabled: boolean;
-  /** Whether that cache exists on this Mac at all -- "switched off" and "nothing to read" are
-   * different states and the row should not claim the first when it means the second. */
-  available: boolean;
-  syncedAt: string | null;
-  error: string | null;
-  count: number;
-  stored: number;
 }
 
 /** The two auto-record switches in the Meetings header, plus design §9's audio retention window:

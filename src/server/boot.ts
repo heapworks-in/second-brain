@@ -11,7 +11,7 @@ import { distillSweepTick, QUIET_MINUTES } from "@/domain/distill";
 import { reconcileRecordings, stopForShutdown } from "@/domain/meetings/reconcile";
 import { sweepMissingSummaries } from "@/domain/meetings/summarize";
 import { hasSummaryModel } from "@/providers/chat";
-import { syncCalendarFeed, syncOutlookWidget } from "@/domain/activity";
+import { syncCalendarFeed } from "@/domain/activity";
 import { checkOpenDatabase, recordDbCheck, getLastDbCheck } from "@/db/safety";
 import { getGistProvider } from "@/providers/gist";
 import { getEmbedProvider } from "./providers";
@@ -23,12 +23,11 @@ const g = globalThis as unknown as {
   __sbBackupInterval?: NodeJS.Timeout;
   __sbAutoStartInterval?: NodeJS.Timeout;
   __sbFeedInterval?: NodeJS.Timeout;
-  __sbOutlookInterval?: NodeJS.Timeout;
   __sbDistillInterval?: NodeJS.Timeout;
   __sbShutdownHooked?: boolean;
 };
 
-/** Outlook republishes a calendar every few minutes; polling faster only re-reads the same file. */
+/** A published calendar is republished every few minutes; polling faster only re-fetches the same file. */
 const FEED_CHECK_MS = 5 * 60_000;
 const FEED_FIRST_MS = 15_000;
 
@@ -145,20 +144,6 @@ export function boot(): JobWorker {
     const feed = () => void syncCalendarFeed(db, { log: (m) => console.log(`[calendar-feed] ${m}`) });
     setTimeout(feed, FEED_FIRST_MS).unref();
     g.__sbFeedInterval = setInterval(feed, FEED_CHECK_MS);
-  }
-  if (!g.__sbOutlookInterval) {
-    // Outlook for Mac never publishes its calendar to EventKit, so the helper cannot see work
-    // meetings at all; this reads the cache its Calendar widget keeps instead. Returns "off"
-    // without complaint on any Mac that has no such file, which is most of them.
-    const outlook = () => {
-      try {
-        syncOutlookWidget(db, { log: (m) => console.log(`[calendar-outlook] ${m}`) });
-      } catch (err) {
-        console.log(`[calendar-outlook] ${err instanceof Error ? err.message : String(err)}`);
-      }
-    };
-    setTimeout(outlook, FEED_FIRST_MS).unref();
-    g.__sbOutlookInterval = setInterval(outlook, FEED_CHECK_MS);
   }
   if (!g.__sbAutoStartInterval) {
     // The tick swallows its own errors; the setting it reads decides whether it does anything.

@@ -19,8 +19,6 @@ afterEach(() => vi.unstubAllGlobals());
 describe("calendar feed api", () => {
   it("starts empty, rejects a bad link, and syncs a good one on save and on demand", async () => {
     expect(await (await r.calendar.GET()).json()).toMatchObject({ feedUrl: "", syncedAt: null, error: null, count: 0 });
-    // Outlook is its own opt-in source on the same settings payload; off and empty until asked for.
-    expect((await (await r.calendar.GET()).json()).outlook).toMatchObject({ enabled: false, stored: 0 });
     expect((await r.calendar.PATCH(json("PATCH", "/api/settings/calendar", { feedUrl: "ftp://x/y.ics" }))).status).toBe(400);
     expect((await r.calendar.PATCH(json("PATCH", "/api/settings/calendar", { nope: 1 }))).status).toBe(400);
 

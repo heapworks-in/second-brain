@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarSync, Laptop, RefreshCw } from "lucide-react";
-import type { CalendarFeedDTO, OutlookSourceDTO } from "@/lib/dto";
+import { CalendarSync, RefreshCw } from "lucide-react";
+import type { CalendarFeedDTO } from "@/lib/dto";
 import { sinceLabel } from "../activity/format";
 import { Button, Input } from "../ui";
 
@@ -100,64 +100,6 @@ export function CalendarFeed({ onSynced }: { onSynced?: () => void }) {
           <span className="text-fg-faint">Waiting for the first sync</span>
         )}
       </p>
-      {/* Guarded rather than assumed: a response without this key (an older server, a cached
-          payload) must not take the whole settings pane down with it. */}
-      {state.outlook && <OutlookSource state={state.outlook} busy={busy} onToggle={(enabled) =>
-        void send({ method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ outlookEnabled: enabled }) })
-      } />}
     </section>
-  );
-}
-
-/**
- * The Outlook desktop app as a second source, read from its Calendar widget's own cache.
- *
- * Off by default and explicit about why: anyone whose work account is already in macOS Internet
- * Accounts gets the same meetings through Apple's calendar, and running both produces two rows
- * for every meeting. Switching this off deletes everything it synced, which is the cleanup path
- * for exactly that -- so the button says how many rows that is rather than making it a surprise.
- */
-function OutlookSource({
-  state,
-  busy,
-  onToggle,
-}: {
-  state: OutlookSourceDTO;
-  busy: boolean;
-  onToggle: (enabled: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2 flex-wrap border-t border-hairline pt-2">
-      <Laptop className="w-4 h-4 text-fg-muted shrink-0" aria-hidden />
-      <span className="text-[12.5px]">Outlook app on this Mac</span>
-      <Button
-        size="sm"
-        variant={state.enabled ? undefined : "primary"}
-        disabled={busy || (!state.enabled && !state.available)}
-        onClick={() => onToggle(!state.enabled)}
-      >
-        {state.enabled ? (state.stored > 0 ? `Turn off and remove ${state.stored}` : "Turn off") : "Turn on"}
-      </Button>
-      <p className="text-[12.5px] m-0 basis-full" role="status">
-        {!state.available ? (
-          <span className="text-fg-faint">
-            No Outlook calendar widget found on this Mac, so there is nothing to read.
-          </span>
-        ) : state.enabled && state.error ? (
-          <span className="text-danger">{state.error}</span>
-        ) : state.enabled && state.syncedAt ? (
-          <span className="text-fg-muted">
-            Synced {state.count} {state.count === 1 ? "meeting" : "meetings"} {sinceLabel(state.syncedAt)}. Checked every five minutes.
-          </span>
-        ) : state.enabled ? (
-          <span className="text-fg-faint">Waiting for the first sync</span>
-        ) : (
-          <span className="text-fg-faint">
-            Reads meetings straight from the Outlook app. Leave this off if your work account is
-            already in macOS Internet Accounts, or every meeting will appear twice.
-          </span>
-        )}
-      </p>
-    </div>
   );
 }
