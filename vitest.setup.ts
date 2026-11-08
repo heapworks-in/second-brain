@@ -20,6 +20,22 @@ import { defaultDataDir } from "@/lib/paths";
  */
 process.env.SB_DATA_DIR ??= fs.mkdtempSync(path.join(os.tmpdir(), "sb-vitest-default-"));
 
+/**
+ * The same defence for the model configuration, which is the second thing in this app that lives
+ * outside its own data directory and can therefore be the developer's real one.
+ *
+ * Both halves matter and for different reasons. The config path keeps a test from reading — or,
+ * worse, writing and backing up — the real `~/.config/local-models.json`. The runtime URL keeps
+ * a test from probing whatever is actually listening on ollama's default port: a summary test
+ * reached the developer's running ollama, found three models, and failed with a message about
+ * picking one of them. A test's answer must not depend on what the machine happens to be running.
+ *
+ * Port 1 rather than a timeout-prone address: nothing listens there, so the connection is refused
+ * immediately instead of costing every test a probe timeout.
+ */
+process.env.SB_MODELS_CONFIG ??= path.join(process.env.SB_DATA_DIR, "local-models.json");
+process.env.SB_OLLAMA_URL ??= "http://127.0.0.1:1";
+
 beforeEach(() => {
   const dir = process.env.SB_DATA_DIR;
   if (!dir || path.resolve(dir) === path.resolve(defaultDataDir())) {
@@ -27,6 +43,10 @@ beforeEach(() => {
       `SB_DATA_DIR is unset or resolves to the real data directory (${defaultDataDir()}). ` +
         "A test is about to touch production data. Call makeTempDataDir() from @/test/db.",
     );
+  }
+  const config = process.env.SB_MODELS_CONFIG;
+  if (!config || config.startsWith(path.join(os.homedir(), ".config"))) {
+    throw new Error(`SB_MODELS_CONFIG is unset or points at the real one (${config}). A test is about to read or rewrite it.`);
   }
 });
 

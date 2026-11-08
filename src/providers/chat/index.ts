@@ -1,19 +1,20 @@
 import fs from "node:fs";
-import path from "node:path";
-import { modelsDir } from "@/lib/paths";
 import { resolveTool } from "@/domain/meetings/tools";
-import { createLlamaCppChatProvider } from "./llamacpp";
+import { chatProviderFor, localModelPath, roleStates } from "@/domain/models/resolve";
 import type { ChatProvider } from "./types";
 
 export type { ChatProvider, StructuredRequest } from "./types";
 
-/** Where `scripts/brain.sh setup`'s `download_summary_model` step puts the model file -- the
- * same layout src/providers/gist/index.ts uses for its own, smaller model. */
+/** Where `scripts/brain.sh setup`'s `download_summary_model` step puts the model file. The
+ * layout belongs to `@/domain/models/resolve` now, which is also the last of the three sources
+ * that can answer this role -- this is a named alias so existing callers keep reading well. */
 export function summaryModelPath(): string {
-  return path.join(modelsDir(), "summary", "model.gguf");
+  return localModelPath("summary");
 }
 
-/** A missing model means this feature is off, not broken -- same shape as `hasGistModel`. */
+/** Whether the GGUF beside the app is there. Narrower than "can a summary be written", which
+ * is `summaryUnavailable()`: a machine with a runtime and no local file answers false here and
+ * can still write summaries perfectly well. */
 export function hasSummaryModel(): boolean {
   return fs.existsSync(summaryModelPath());
 }
@@ -22,14 +23,18 @@ export function summaryBinary(): string | null {
   return resolveTool("llama-cli");
 }
 
-/** Null when the model or the binary is absent: every caller (today, just summarize-meeting.ts)
- * already treats that as "this feature is off" -- it used to mean no Anthropic key, now it means
- * no local model yet. */
-export function getChatProvider(): ChatProvider | null {
-  if (!hasSummaryModel()) return null;
-  const bin = summaryBinary();
-  if (!bin) return null;
-  return createLlamaCppChatProvider(summaryModelPath(), bin);
+/**
+ * Null when nothing can answer the summary role: every caller already treats that as "this
+ * feature is off, not broken".
+ *
+ * Async now, and delegating to `chatProviderFor`, because a role can be answered by a model
+ * resident in a local runtime as well as by a GGUF beside the app -- and which one answers is a
+ * question about `~/.config/local-models.json` and a port, not about one file on disk. There is
+ * deliberately only this one way to build a provider: two paths to the same decision is how a
+ * settings page and the job that reads it end up disagreeing.
+ */
+export async function getChatProvider(): Promise<ChatProvider | null> {
+  return chatProviderFor("summary");
 }
 
 /**
@@ -43,8 +48,7 @@ export function getChatProvider(): ChatProvider | null {
  * done nothing at all -- so the page said "No summary yet" for ever, and nothing anywhere said
  * why. A reason the person can act on is the whole point of this function.
  */
-export function summaryUnavailable(): string | null {
-  if (!hasSummaryModel()) return "the local summary model is not installed yet — it is a 4.4 GB download the app fetches in the background";
-  if (!summaryBinary()) return "llama-cli is not installed, so the summary model has nothing to run it: install Homebrew, then run brew install llama.cpp";
-  return null;
+export async function summaryUnavailable(): Promise<string | null> {
+  const states = await roleStates();
+  return states.states.find((s) => s.role === "summary")?.unavailable ?? null;
 }

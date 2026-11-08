@@ -10,7 +10,7 @@ import { autoStartTick } from "@/domain/meetings/auto-start";
 import { distillSweepTick, QUIET_MINUTES } from "@/domain/distill";
 import { reconcileRecordings, stopForShutdown } from "@/domain/meetings/reconcile";
 import { sweepMissingSummaries } from "@/domain/meetings/summarize";
-import { hasSummaryModel } from "@/providers/chat";
+import { summaryUnavailable } from "@/providers/chat";
 import { syncCalendarFeed } from "@/domain/activity";
 import { checkOpenDatabase, recordDbCheck, getLastDbCheck } from "@/db/safety";
 import { getGistProvider } from "@/providers/gist";
@@ -132,7 +132,11 @@ export function boot(): JobWorker {
   const embed = getEmbedProvider();
   if (!embed) console.warn("[boot] SB_EMBED=off: semantic search disabled");
   // Read once for the log line; the handlers ask again per job, so a model installed later works.
-  if (!hasSummaryModel()) console.log("[boot] no local summary model: meeting summaries are off");
+  // Says why, not just that: the reason comes from the same resolver the job uses, so a machine
+  // with a runtime holding the model logs nothing and a machine with neither says which.
+  void summaryUnavailable().then((why) => {
+    if (why) console.log(`[boot] meeting summaries are off — ${why}`);
+  });
   const worker = new JobWorker(db, createJobHandlers({ db, embed }), {
     log: (m) => console.log(`[worker] ${m}`),
   });
@@ -161,12 +165,17 @@ export function boot(): JobWorker {
   if (!g.__sbDistillInterval) {
     // Checked per tick, not just once at boot, so a model added later takes effect without a
     // restart; wrapped, like every other interval here, so a thrown error never kills the timer.
+    // Voided explicitly rather than left floating: resolving the provider now asks a local
+    // runtime whether it holds the model, which is a round trip, and an unhandled rejection in
+    // a timer callback would take the process with it.
     g.__sbDistillInterval = setInterval(() => {
-      try {
-        if (getGistProvider()) distillSweepTick(db);
-      } catch (err) {
-        console.error("[distill] sweep failed:", err);
-      }
+      void (async () => {
+        try {
+          if (await getGistProvider()) distillSweepTick(db);
+        } catch (err) {
+          console.error("[distill] sweep failed:", err);
+        }
+      })();
     }, DISTILL_CHECK_MS);
   }
   if (!g.__sbDeskInterval) {

@@ -1,18 +1,18 @@
 import fs from "node:fs";
-import path from "node:path";
-import { modelsDir } from "@/lib/paths";
 import { resolveTool } from "@/domain/meetings/tools";
-import { createLlamaCppGistProvider } from "./llamacpp";
+import { gistProviderFor, localModelPath } from "@/domain/models/resolve";
 import type { GistProvider } from "./types";
 
 export type { GistProvider } from "./types";
 
-/** Where `scripts/brain.sh setup`'s `download_gist_model` step puts the model file. */
+/** Where `scripts/brain.sh setup`'s `download_gist_model` step puts the model file — the last of
+ * the three sources `@/domain/models/resolve` can answer this role from. */
 export function gistModelPath(): string {
-  return path.join(modelsDir(), "gist", "model.gguf");
+  return localModelPath("gist");
 }
 
-/** Same on/off shape as `hasSummaryModel`: a missing model means this feature is off, not broken. */
+/** Whether the GGUF beside the app is there. Narrower than "can a gist be written": a machine
+ * with a runtime and no local file answers false here and gists perfectly well. */
 export function hasGistModel(): boolean {
   return fs.existsSync(gistModelPath());
 }
@@ -21,12 +21,15 @@ export function gistBinary(): string | null {
   return resolveTool("llama-cli");
 }
 
-/** Null when the model or the binary is absent: every caller treats that as "this feature is
- * off" -- a bare, unresolved `llama-cli` command name would otherwise throw ENOENT deep inside
- * the job handler the moment a real distillation ran. */
-export function getGistProvider(): GistProvider | null {
-  if (!hasGistModel()) return null;
-  const bin = gistBinary();
-  if (!bin) return null; // off, not broken -- same shape as a missing model file
-  return createLlamaCppGistProvider(gistModelPath(), bin);
+/**
+ * Null when nothing can answer the gist role: every caller treats that as "this feature is off",
+ * which is why a bare, unresolved `llama-cli` must never reach a job handler and throw ENOENT
+ * inside a real distillation.
+ *
+ * Async now, and delegating to the resolver, for the same reason the chat provider does: which
+ * model answers a role is a question about `~/.config/local-models.json` and a port as much as
+ * about a file on disk, and there must be exactly one place that decides.
+ */
+export async function getGistProvider(): Promise<GistProvider | null> {
+  return gistProviderFor();
 }

@@ -22,7 +22,7 @@ export function createDistillNoteHandler(deps: DistillNoteDeps): JobHandler {
     const item = getItem(db, itemId);
     if (!item) throw new Error(`Item ${itemId} not found`);
 
-    const gist = deps.gist !== undefined ? deps.gist : getGistProvider();
+    const gist = deps.gist !== undefined ? deps.gist : await getGistProvider();
     if (!gist) {
       log(`[distill_note] no local gist model; item ${itemId} keeps no distillation`);
       return;

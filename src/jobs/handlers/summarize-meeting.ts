@@ -286,13 +286,13 @@ export function createSummarizeMeetingHandler(deps: SummarizeMeetingDeps): JobHa
       log(`[summarize_meeting] item ${itemId} could not be summarised: ${message}`);
     };
 
-    const provider = deps.provider !== undefined ? deps.provider : getChatProvider();
+    const provider = deps.provider !== undefined ? deps.provider : await getChatProvider();
     if (!provider) {
       // This used to return silently with one log line, which is how a Mac missing llama-cli
       // came to show "No summary yet" on every meeting for ever: the job completed, nothing was
       // written to the item, and the only record was a line in a log nobody reads. The reason
       // goes on the item now, where the page already renders it and the person can act on it.
-      fail(summaryUnavailable() ?? "the local summary model could not be resolved");
+      fail((await summaryUnavailable()) ?? "the summary model could not be resolved");
       return;
     }
 
