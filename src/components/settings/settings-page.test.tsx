@@ -38,7 +38,7 @@ function payload(over: Partial<SettingsPayload> = {}): SettingsPayload {
 }
 
 /** Each section writes the route that already owns its setting; this records which. */
-function stubPatches(answer: Record<string, unknown> = {}) {
+function stubPatches(answer: object = {}) {
   const calls: { url: string; method: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
