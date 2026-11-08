@@ -1,4 +1,4 @@
-import type { ItemStatus, ItemType, ContainerKind, ContainerStatus, ResourceCategory, GoalHorizon, GoalStatus, FocusMode, FocusOutcome, ReviewStep, MeetingDecision, PredictionKind, PredictionUnit } from "@/db/enums";
+import type { ItemStatus, ItemType, ContainerKind, ContainerStatus, ResourceCategory, GoalHorizon, GoalStatus, FocusMode, FocusOutcome, ReviewStep, MeetingDecision, PredictionKind, PredictionUnit, ProposalKind } from "@/db/enums";
 import type { CheckResult } from "@/db/safety";
 import type { Distillation } from "@/domain/distill";
 
@@ -689,4 +689,27 @@ export interface PredictionsDTO {
   /** Unresolved and past their date, oldest first. The log's own nag, repeated from Home. */
   due: PredictionDTO[];
   today: string;
+}
+
+/** One card on the desk. `payload` stays on the server: the page never needs it, and a card is
+ * answered by its id. */
+export interface ProposalDTO {
+  id: number;
+  kind: ProposalKind;
+  source: string;
+  title: string;
+  detail: string;
+  rank: number;
+  createdAt: string;
+  /** How often this kind has been refused lately, 0..1 — what the card's own "why am I seeing
+   * this?" line reads from, so the ranking is legible rather than mysterious. */
+  dismissRate: number;
+}
+
+export interface DeskDTO {
+  proposals: ProposalDTO[];
+  /** Open proposals in total, which can exceed what `proposals` carries: the cap is the feature. */
+  open: number;
+  /** Decided today, for the finish line — the count is the reason to come back tomorrow. */
+  decidedToday: number;
 }

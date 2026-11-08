@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { makeTestDb, type TestDb } from "@/test/db";
-import { calendarEvents, containers, dailyPlanEntries, items, meetingSeriesDecisions, predictions, proposals, tasks } from "@/db/schema";
+import { containers, dailyPlanEntries, items, meetingSeriesDecisions, predictions, proposals, tasks } from "@/db/schema";
 import { getItem, listItems } from "@/domain/items";
 import { getTask, listTasks } from "@/domain/tasks";
 import { listPlan } from "@/domain/plan";

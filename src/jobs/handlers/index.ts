@@ -12,6 +12,7 @@ import { createBackupHandler } from "./backup";
 import { createTranscribeFinalHandler } from "./transcribe-final";
 import { createSummarizeMeetingHandler } from "./summarize-meeting";
 import { createDistillNoteHandler } from "./distill-note";
+import { createDeskHandler } from "./desk";
 
 export interface HandlerDeps {
   db: DB;
@@ -40,5 +41,6 @@ export function createJobHandlers(deps: HandlerDeps): JobHandlers {
     summarize_meeting: createSummarizeMeetingHandler({ db: deps.db, provider: deps.chatProvider }),
     distill_note: createDistillNoteHandler({ db: deps.db }),
     backup: createBackupHandler({ db: deps.db }),
+    desk: createDeskHandler({ db: deps.db }),
   };
 }

@@ -19,6 +19,7 @@ import { blocksByTask, BlockError } from "@/domain/blocks";
 import { GoalError, goalRefsByContainer, goalsWithMeasure, recentCloses, type GoalWithMeasure } from "@/domain/goals";
 import { FocusError, focusMinutesByBlock, focusMinutesByTask, likeThisMinutesByTask } from "@/domain/focus";
 import { PredictionError } from "@/domain/predictions";
+import { DeskError } from "@/domain/desk/decide";
 import { addDays, localDay } from "@/domain/activity";
 import { isInterview, parseAttendeeNames } from "@/domain/activity/calendar";
 import type { Distillation } from "@/domain/distill";
@@ -447,7 +448,8 @@ export function errorResponse(err: unknown): NextResponse {
     err instanceof BlockError ||
     err instanceof GoalError ||
     err instanceof FocusError ||
-    err instanceof PredictionError
+    err instanceof PredictionError ||
+    err instanceof DeskError
   ) {
     return NextResponse.json({ error: err.message }, { status: err.status });
   }

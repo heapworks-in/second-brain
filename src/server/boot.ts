@@ -24,6 +24,7 @@ const g = globalThis as unknown as {
   __sbAutoStartInterval?: NodeJS.Timeout;
   __sbFeedInterval?: NodeJS.Timeout;
   __sbDistillInterval?: NodeJS.Timeout;
+  __sbDeskInterval?: NodeJS.Timeout;
   __sbShutdownHooked?: boolean;
 };
 
@@ -39,6 +40,14 @@ const AUTO_START_CHECK_MS = 30 * 1000;
 
 /** Matches `QUIET_MINUTES`: no point checking more often than an item can newly go quiet. */
 const DISTILL_CHECK_MS = QUIET_MINUTES * 60_000;
+
+/** The desk sweep. A quarter of an hour is the resolution of the most time-sensitive thing it
+ * notices -- a meeting four hours out -- and anything faster would only re-read the same tables
+ * to reach the same answer. */
+const DESK_CHECK_MS = 15 * 60_000;
+/** Soon after boot, not instantly: the first sweep has to wait for the calendar sync above, or
+ * the desk's first impression of the day is drawn from whatever the last sync left. */
+const DESK_FIRST_MS = 45_000;
 
 function ensureTodayBackupQueued(db: DB): void {
   if (!fs.existsSync(backupFilePath())) enqueueJob(db, "backup", {});
@@ -159,6 +168,19 @@ export function boot(): JobWorker {
         console.error("[distill] sweep failed:", err);
       }
     }, DISTILL_CHECK_MS);
+  }
+  if (!g.__sbDeskInterval) {
+    // Queued rather than run here, so the sweep gets the worker's retry and its log line, and so
+    // the "Refresh" button on `/desk` and this timer start exactly the same work.
+    const desk = () => {
+      try {
+        enqueueJob(db, "desk", {});
+      } catch (err) {
+        console.error("[desk] could not queue the sweep:", err);
+      }
+    };
+    setTimeout(desk, DESK_FIRST_MS).unref();
+    g.__sbDeskInterval = setInterval(desk, DESK_CHECK_MS);
   }
   console.log("[boot] job worker started");
   return worker;
