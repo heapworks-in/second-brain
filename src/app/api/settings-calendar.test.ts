@@ -9,11 +9,24 @@ const ICS = fs.readFileSync(path.join(process.cwd(), "src/test/fixtures/outlook-
 const json = (method: string, url: string, body?: unknown) =>
   new Request(`http://localhost${url}`, { method, headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
 
+/**
+ * The fixture is dated September 2026 and the sync window is thirty days back of *today*, so this
+ * test's count decayed as the real calendar advanced: it asserted 11, and by November only the
+ * three Standup occurrences still inside the window survived. The route reads the real clock on
+ * purpose -- it has no business taking a date from a request -- so the clock is what gets pinned
+ * here. Only `Date` is faked; the timers stay real, because the sync awaits a fetch.
+ */
+const NOW = new Date("2026-09-23T06:00:00.000Z");
+
 beforeAll(async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: NOW });
   dir = makeTempDataDir();
   r = { calendar: await import("./settings/calendar/route"), sync: await import("./settings/calendar/sync/route") };
 });
-afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+afterAll(() => {
+  vi.useRealTimers();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("calendar feed api", () => {
