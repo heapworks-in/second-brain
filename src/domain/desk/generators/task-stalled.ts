@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { dailyPlanEntries, tasks } from "@/db/schema";
 import { focusMinutesByTask } from "@/domain/focus";
 import { threshold } from "../thresholds";
@@ -16,7 +16,9 @@ import type { Generator } from "../types";
  * Zero focus minutes is the condition, not "a bit of" progress: a task someone has actually sat
  * with for ten minutes is a task in progress, and the desk has nothing useful to say about it.
  */
-export const taskStalled: Generator = (db, now) => {
+// `now` is unused: how many days a task has been carried is a count of plan rows, not a
+// distance from today. It stays in the signature because every generator has the same one.
+export const taskStalled: Generator = (db) => {
   const minDays = threshold(db, "desk.stalledPlanDays");
   const rows = db
     .select({

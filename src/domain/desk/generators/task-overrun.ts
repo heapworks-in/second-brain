@@ -22,7 +22,8 @@ export function roundToQuarterHour(minutes: number): number {
  * finished tasks, so it is absent far more often than present, and a commit that depended on it
  * would be a commit that usually could not happen.
  */
-export const taskOverrun: Generator = (db, now) => {
+// `now` is unused: an overrun is estimate against minutes spent, and neither is a date.
+export const taskOverrun: Generator = (db) => {
   const ratio = threshold(db, "desk.overrunRatio");
   const open = db
     .select({ id: tasks.id, title: tasks.title, estimateMinutes: tasks.estimateMinutes, containerId: tasks.containerId })
