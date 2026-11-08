@@ -42,16 +42,16 @@ unique(kind, sourceRef)
 
 ## 4. The generators
 
-Each is a pure function `(db, now) => ProposalDraft[]` in `src/domain/desk/generators/`, exported through one array so adding a source is adding a file. Seven in this slice:
+Each is a pure, synchronous function `(db, now) => ProposalDraft[]` in `src/domain/desk/generators/`, exported through one array so adding a source is adding a file. Synchronous and provider-free on purpose: the embedding provider can be switched off (`SB_EMBED=off`), and a queue that empties when a model is missing would be worse than no queue. Seven in this slice:
 
 | kind | fires when | accept commits |
 |---|---|---|
 | `meeting_unprepared` | a meeting starts within 4 h, has other attendees, and its series has no agenda note or carries open decisions from the last instance | opens the prep note, pre-filled with those open decisions |
 | `decision_stale` | a `meeting_series_decisions` row is older than 90 days and has never been reaffirmed | stamps it reaffirmed (`lastVerified`, `confidence`) |
-| `task_overrun` | an open task's focus minutes exceed its estimate by more than half | re-estimates from actual, through the existing `growEstimate` |
+| `task_overrun` | an open task's focus minutes exceed its estimate by more than half | re-estimates to the minutes actually spent, rounded to the nearest quarter hour |
 | `task_stalled` | a task has been planned on 3+ distinct days with zero focus minutes | unplans it |
 | `prediction_due` | a prediction is past its resolve-by date | opens the resolve step |
-| `capture_unfiled` | an inbox item is older than 7 days with no container | files it into the nearest container by embedding, named in the card |
+| `capture_unfiled` | an inbox item is older than 7 days with no container | files it into the container of the closest existing item by FTS, named in the card |
 | `commitment_unbooked` | a meeting action item has no task | creates the task, linked to the meeting |
 
 `decision_stale` needs two new columns on `meeting_series_decisions` (`lastVerified`, `confidence`) — the one schema change outside `proposals`. The pattern is lifted from COG-second-brain's `memory-hygiene`: trust is a property of the last check, not of the record, and nothing is ever deleted on the app's own initiative. Fully obsolete entries are proposed for archive, which here means a dismissed proposal and a note, never a `DELETE`.
