@@ -9,7 +9,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
 const TODAY = "2026-09-23";
 
 const loose: TaskDTO = {
-  id: 1, title: "Loose one", notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null,
+  id: 1, title: "Loose one", notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null, requester: null, askedOn: null,
   estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0, likeThisMinutes: null, completedAt: null, sortOrder: 0, createdAt: "", updatedAt: "",
 };
 
@@ -30,7 +30,7 @@ function day(): PlannerDayDTO {
     unfinishedYesterday: [],
     meetings: [],
     calendar: { calendarsSeen: 1, permission: true },
-    sources: { inbox: [loose], due: { overdue: [], today: [] }, projects: [], areas: [] },
+    sources: { owed: [], inbox: [loose], due: { overdue: [], today: [] }, projects: [], areas: [] },
     capacity: { freeMinutes: 540, plannedMinutes: 0, unestimated: 0, workHours: "09:00-18:00", workingDays: [1, 2, 3, 4, 5], blockedMinutes: 0, unplacedMinutes: 0, drift: null, forecastMinutes: null, leftTodayMinutes: 540 },
   };
 }

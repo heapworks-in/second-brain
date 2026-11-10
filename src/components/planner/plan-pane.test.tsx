@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: nav.push, refresh:
 const TODAY = "2026-09-22";
 
 const base: TaskDTO = {
-  id: 1, title: "Draft email", notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null,
+  id: 1, title: "Draft email", notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null, requester: null, askedOn: null,
   estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0, likeThisMinutes: null, completedAt: null, sortOrder: 0, createdAt: "", updatedAt: "",
 };
 const planned: PlanTaskDTO = { ...base, id: 2, title: "Write the brief", planId: 9, sortOrder: 0 };
@@ -27,7 +27,7 @@ function day(over: Partial<PlannerDayDTO> = {}): PlannerDayDTO {
     unfinishedYesterday: [base],
     meetings: [],
     calendar: { calendarsSeen: 2, permission: true },
-    sources: { inbox: [], due: { overdue: [], today: [] }, projects: [{ container: { id: 10, name: "Launch", slug: "launch", kind: "project" }, tasks: [c] }], areas: [] },
+    sources: { owed: [], inbox: [], due: { overdue: [], today: [] }, projects: [{ container: { id: 10, name: "Launch", slug: "launch", kind: "project" }, tasks: [c] }], areas: [] },
     capacity: { freeMinutes: 540, plannedMinutes: 0, unestimated: 0, workHours: "09:00-18:00", workingDays: [1, 2, 3, 4, 5], blockedMinutes: 0, unplacedMinutes: 0, drift: null, forecastMinutes: null, leftTodayMinutes: 540 },
     ...over,
   };
@@ -363,7 +363,7 @@ describe("PlanPane", () => {
 
   it("shows no ritual when the morning has nothing to offer", async () => {
     stubPlan();
-    const quiet = day({ plan: [], unfinishedYesterday: [], sources: { inbox: [], due: { overdue: [], today: [] }, projects: [], areas: [] } });
+    const quiet = day({ plan: [], unfinishedYesterday: [], sources: { owed: [], inbox: [], due: { overdue: [], today: [] }, projects: [], areas: [] } });
     render(<PlanPane day={quiet} today={TODAY} onRefresh={vi.fn()} />);
     expect(await screen.findByText(/Nothing planned\./)).toBeTruthy();
     expect(screen.queryByRole("list", { name: "Plan the day" })).toBeNull();

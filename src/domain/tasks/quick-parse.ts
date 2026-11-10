@@ -1,3 +1,5 @@
+import { extractMentions } from "@/lib/mentions";
+
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 function localDay(d: Date): string {
@@ -39,11 +41,17 @@ export function estimateFromToken(text: string): { title: string; estimateMinute
   return { title, estimateMinutes: minutes, sessionMinutes };
 }
 
-/** Parse "! Title fri" style shortcuts from an add-task input. Pure; `now` is injectable. */
+/**
+ * Parse "! Title fri" style shortcuts from an add-task input. Pure; `now` is injectable.
+ *
+ * `requesterHandle` is the first `@handle` in the text, and the handle stays in the title --
+ * exactly what `autoLinkMentions` does to an item's body. A handle matching nobody is then still
+ * readable text instead of something silently eaten, and a typo never creates a person.
+ */
 export function quickParse(
   input: string,
   now: Date = new Date(),
-): { title: string; priority: "high" | "normal"; dueDate: string | null; estimateMinutes: number | null; sessionMinutes: number | null } {
+): { title: string; priority: "high" | "normal"; dueDate: string | null; estimateMinutes: number | null; sessionMinutes: number | null; requesterHandle: string | null } {
   let title = input.trim();
   let priority: "high" | "normal" = "normal";
   if (title.startsWith("!")) {
@@ -70,5 +78,5 @@ export function quickParse(
       }
     }
   }
-  return { title: title.trim(), priority, dueDate, estimateMinutes: est.estimateMinutes, sessionMinutes: est.sessionMinutes };
+  return { title: title.trim(), priority, dueDate, estimateMinutes: est.estimateMinutes, sessionMinutes: est.sessionMinutes, requesterHandle: extractMentions(input)[0] ?? null };
 }

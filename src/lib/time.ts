@@ -12,3 +12,15 @@ export function localDay(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+/**
+ * The instant local midnight began, as a UTC ISO string -- what a stored `nowIso()` timestamp
+ * has to be compared against to mean "today".
+ *
+ * `${localDay(x)}T00:00:00.000Z` is the mistake this exists to prevent: it labels a local
+ * midnight as a UTC one, so east of UTC everything decided between local midnight and UTC
+ * midnight reads as yesterday. That was 5.5 hours of every day here, and it was found at 00:02.
+ */
+export function startOfLocalDay(now: Date): string {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+}

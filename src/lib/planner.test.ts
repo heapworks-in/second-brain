@@ -10,6 +10,7 @@ import { assignMeetingContainer } from "@/domain/meetings/attribution";
 import { addBlock } from "@/domain/blocks";
 import { addToPlan } from "@/domain/plan";
 import { createTask, completeTask } from "@/domain/tasks";
+import { createPerson } from "@/domain/people";
 import { fileItem } from "@/domain/items";
 import { startFocus, finishFocus } from "@/domain/focus";
 import * as focusDomain from "@/domain/focus";
@@ -72,6 +73,24 @@ describe("plannerDay", () => {
     ]);
     return listMeetings(t.db, { from: DATE, to: "2026-09-23" })[0];
   }
+
+  it("offers what somebody is waiting on as its own source, longest wait first", () => {
+    const priya = createPerson(t.db, { name: "Priya Raman" });
+    const sam = createPerson(t.db, { name: "Sam Okoro" });
+    createTask(t.db, { title: "Mine alone" });
+    createTask(t.db, { title: "Asked last week", requesterPersonId: priya.id, askedOn: "2026-09-15" });
+    createTask(t.db, { title: "Asked yesterday", requesterPersonId: sam.id, askedOn: "2026-09-21" });
+    const { sources } = plannerDay(t.db, DATE, WEEK_NOW);
+    expect(sources.owed.map((t2) => t2.title)).toEqual(["Asked last week", "Asked yesterday"]);
+    expect(sources.owed[0].requester).toMatchObject({ name: "Priya Raman", slug: "priya-raman" });
+  });
+
+  it("drops a task from the owed source once it is on the day's plan", () => {
+    const priya = createPerson(t.db, { name: "Priya Raman" });
+    const task = createTask(t.db, { title: "Asked last week", requesterPersonId: priya.id, askedOn: "2026-09-15" });
+    addToPlan(t.db, DATE, task.id);
+    expect(plannerDay(t.db, DATE, WEEK_NOW).sources.owed).toHaveLength(0);
+  });
 
   it("carries each captured meeting's badges, the way the meetings list does", () => {
     const ev = meeting();

@@ -6,12 +6,13 @@ import { autoUpdate, computePosition, flip, offset, shift } from "@floating-ui/d
 import { GripVertical, MoreHorizontal } from "lucide-react";
 import type { TaskDTO } from "@/lib/dto";
 import type { TaskPriority } from "@/db/enums";
-import { deadlineLabel, TONE_CLASS } from "@/lib/deadline";
+import { daysBetween, deadlineLabel, TONE_CLASS } from "@/lib/deadline";
 import { formatMinutes } from "@/lib/capacity";
 import { titleCase } from "@/lib/format";
 import { blocksOn } from "../planner/block-math";
 import { addDaysLocal, formatClock, WEEKDAYS } from "../activity/format";
 import { Button, Chip, IconButton, Input } from "../ui";
+import { PeoplePicker } from "../people-picker";
 import { EstimateChip } from "./estimate-chip";
 import { EstimateHint, hasEstimateHint } from "./estimate-hint";
 import { FocusButton } from "../focus/focus-button";
@@ -55,6 +56,10 @@ interface Props {
   onDue: (value: string | null) => void;
   /** Shows the estimate chip. Left out where an estimate cannot be saved. */
   onEstimate?: (minutes: number | null) => void;
+  /** Names who is waiting on the task, or clears it with null. Given, the row offers "Waiting
+   * for…" in its menu; the chip itself shows wherever the task carries a requester, because a
+   * person waiting is worth seeing on a screen that cannot change it. */
+  onRequester?: (personId: number | null) => void;
   onPriority: (priority: TaskPriority) => void;
   onDrop: () => void;
   onDelete: () => void;
@@ -100,7 +105,7 @@ interface Props {
 }
 
 export function TaskRow({
-  task, today, onToggle, onRename, onDue, onEstimate, onPriority, onDrop, onDelete, onMove, onPlan, onPlanDate, onBlockNow, onUnblock, onPlace, onSplit, blockDate, planFrom = today,
+  task, today, onToggle, onRename, onDue, onEstimate, onRequester, onPriority, onDrop, onDelete, onMove, onPlan, onPlanDate, onBlockNow, onUnblock, onPlace, onSplit, blockDate, planFrom = today,
   planLabel = "Plan for today", planned, compact, className = "", draggable, onMoveBy, onDragStart, onDragOver, onDragLeave, onDragEnd, onRowDrop,
   as, rowProps: extraRowProps,
 }: Props) {
@@ -116,6 +121,7 @@ export function TaskRow({
   const planButtonRef = useRef<HTMLButtonElement | null>(null);
   const splitButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuPanelRef = useRef<HTMLDivElement | null>(null);
+  const [requesterOpen, setRequesterOpen] = useState(false);
   const done = task.status === "done";
   const due = task.dueDate ? deadlineLabel(task.dueDate, today) : null;
 
@@ -319,6 +325,26 @@ export function TaskRow({
     )
   );
 
+  /**
+   * Who is waiting, and how long they have been. The number is the point: "Priya" alone is a
+   * fact about the task, "Priya · 3d" is a fact about Priya's week, and the second one is what
+   * makes this outrank an undated task of my own.
+   *
+   * Tone climbs with the wait rather than with a deadline, because these mostly have no
+   * deadline -- the wait is the deadline. A finished task says nothing: the waiting is over.
+   */
+  const waited = task.requester && task.askedOn ? daysBetween(task.askedOn, today) : null;
+  const waitingNode =
+    task.requester && !done ? (
+      <span
+        className={`font-mono text-[11px] shrink-0 ${compact ? "self-start" : ""} ${waited !== null && waited >= 7 ? "text-danger" : waited !== null && waited >= 3 ? "text-warn" : "text-fg-muted"}`}
+        title={waited === null ? `${task.requester.name} is waiting` : `${task.requester.name} has been waiting ${waited} day${waited === 1 ? "" : "s"}`}
+      >
+        {task.requester.name}
+        {waited !== null && waited > 0 ? ` · ${waited}d` : ""}
+      </span>
+    ) : null;
+
   // Where the task sits on the timeline. Spec §5: on the row's own day the chip says when the
   // first session starts and, when the day holds more, how many others follow; one press takes
   // the keyboard to that first session. A session on another day has no column here to jump to,
@@ -415,6 +441,20 @@ export function TaskRow({
                 >
                   Set due date
                 </button>
+                {onRequester && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={MENU_ITEM}
+                    onClick={() => {
+                      closeMenu();
+                      if (task.requester) onRequester(null);
+                      else setRequesterOpen(true);
+                    }}
+                  >
+                    {task.requester ? `Nobody is waiting (clear ${task.requester.name})` : "Waiting for…"}
+                  </button>
+                )}
                 {onPlanDate && !planned && (
                   <div className="relative">
                     <button
@@ -693,6 +733,17 @@ export function TaskRow({
   );
   const extraLine = spentLine || estimateHint;
 
+  const requesterPicker =
+    requesterOpen && onRequester ? (
+      <PeoplePicker
+        single
+        title="Who is waiting on this?"
+        selected={task.requester ? [task.requester.id] : []}
+        onChange={(ids) => onRequester(ids[0] ?? null)}
+        onClose={() => setRequesterOpen(false)}
+      />
+    ) : null;
+
   // A column of the week is a seventh of the page: the compact row stacks the due date under
   // a two-line title and drops the grip and the priority chip, so the menu still has its place.
   if (compact) {
@@ -702,6 +753,7 @@ export function TaskRow({
         <span className="flex-1 min-w-0 flex flex-col gap-0.5">
           {titleNode}
           {goalChip}
+          {waitingNode}
           {dueNode}
           {(onEstimate || blockNode) && (
             <span className="flex items-center gap-2">
@@ -713,6 +765,7 @@ export function TaskRow({
           {estimateHint}
         </span>
         {actions}
+        {requesterPicker}
       </Row>
     );
   }
@@ -746,10 +799,12 @@ export function TaskRow({
             Low
           </Chip>
         )}
+        {waitingNode}
         {dueNode}
         {onEstimate && <EstimateChip value={task.estimateMinutes} onChange={onEstimate} />}
         {blockNode}
         {actions}
+        {requesterPicker}
       </div>
       {extraLine && (
         <div className="pl-9 flex flex-col gap-1">

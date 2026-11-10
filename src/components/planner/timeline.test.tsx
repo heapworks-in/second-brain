@@ -45,7 +45,7 @@ const blocked: PlanTaskDTO = {
   priority: "normal",
   dueDate: null,
   containerId: null,
-  sourceItemId: null,
+  sourceItemId: null, requester: null, askedOn: null,
   estimateMinutes: 45,
   sessionMinutes: null,
   blocks: [{ id: 1, taskId: 12, startsAt: `${DATE}T10:30:00`, minutes: 45, spentMinutes: 0 }],

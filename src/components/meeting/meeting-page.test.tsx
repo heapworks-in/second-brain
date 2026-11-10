@@ -130,7 +130,7 @@ const TASK: TaskDTO = {
   priority: "normal",
   dueDate: null,
   containerId: null,
-  sourceItemId: 7,
+  sourceItemId: 7, requester: null, askedOn: null,
   estimateMinutes: null,
   sessionMinutes: null, blocks: [],
   goals: [],

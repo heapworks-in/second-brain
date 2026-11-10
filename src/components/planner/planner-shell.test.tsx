@@ -17,7 +17,7 @@ function day(calendar: PlannerDayDTO["calendar"] = CALENDAR, over: Partial<Plann
     unfinishedYesterday: [],
     meetings: [],
     calendar,
-    sources: { inbox: [], due: { overdue: [], today: [] }, projects: [], areas: [] },
+    sources: { owed: [], inbox: [], due: { overdue: [], today: [] }, projects: [], areas: [] },
     capacity: { freeMinutes: 540, plannedMinutes: 0, unestimated: 0, workHours: "09:00-18:00", workingDays: [1, 2, 3, 4, 5], blockedMinutes: 0, unplacedMinutes: 0, drift: null, forecastMinutes: null, leftTodayMinutes: 540 },
     ...over,
   };
@@ -72,7 +72,7 @@ afterEach(() => {
 });
 
 const planTask = (id: number, title: string): PlanTaskDTO => ({
-  id, title, notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null,
+  id, title, notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null, requester: null, askedOn: null,
   estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0, likeThisMinutes: null, completedAt: null, sortOrder: 0, createdAt: "", updatedAt: "", planId: id,
 });
 const dayCalls = (fetchMock: ReturnType<typeof stubRoutes>) =>

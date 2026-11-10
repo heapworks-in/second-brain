@@ -108,6 +108,7 @@ export const PROPOSAL_KINDS = [
   "prediction_due",
   "capture_unfiled",
   "commitment_unbooked",
+  "commitment_owed",
 ] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 

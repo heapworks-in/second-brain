@@ -42,6 +42,9 @@ export function plannerSources(db: DB, date: string, plannedIds: Set<number>, wi
       .sort((a, b) => Number(unplannedIn(b.tasks, plannedIds) > 0) - Number(unplannedIn(a.tasks, plannedIds) > 0));
   return {
     inbox: open.filter((t) => t.containerId === null).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    // Longest wait first, and undated ones among them: for work somebody is waiting on, the wait
+    // is the deadline, which is why these are their own group rather than part of `due`.
+    owed: unplanned.filter((t) => t.requester !== null).sort((a, b) => (a.askedOn ?? "").localeCompare(b.askedOn ?? "")),
     due: partitionDue(unplanned.filter((t) => t.dueDate !== null && t.dueDate <= date), date),
     projects: groups("project"),
     areas: groups("area"),

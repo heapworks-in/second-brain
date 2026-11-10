@@ -19,6 +19,9 @@ const DEFAULTS = {
   "desk.stalledPlanDays": 3,
   /** How far past its estimate a task runs before the estimate is the thing that is wrong. */
   "desk.overrunRatio": 1.5,
+  /** Days somebody waits before it is a wait rather than a conversation that just happened.
+   * Two, not one: asked yesterday and not done today is a normal Tuesday. */
+  "desk.owedWaitDays": 2,
   /** Days a snooze lasts. "Not now" is one key; choosing a date is three. */
   "desk.snoozeDays": 7,
 } as const;

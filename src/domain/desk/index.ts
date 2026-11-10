@@ -2,7 +2,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { proposals } from "@/db/schema";
 import type { DeskDTO, ProposalDTO } from "@/lib/dto";
-import { localDay } from "@/lib/time";
+import { startOfLocalDay } from "@/lib/time";
 import { dismissRate, OPEN_CAP } from "./rank";
 import { openProposals } from "./reconcile";
 
@@ -25,12 +25,11 @@ export function deskPayload(db: DB, now: Date): DeskDTO {
   for (const kind of rates.keys()) rates.set(kind, dismissRate(db, kind));
 
   const open = db.select({ n: sql<number>`count(*)` }).from(proposals).where(eq(proposals.state, "open")).get()?.n ?? 0;
-  const today = localDay(now.toISOString());
   const decidedToday =
     db
       .select({ n: sql<number>`count(*)` })
       .from(proposals)
-      .where(and(gte(proposals.decidedAt, `${today}T00:00:00.000Z`), sql`${proposals.state} in ('accepted', 'dismissed')`))
+      .where(and(gte(proposals.decidedAt, startOfLocalDay(now)), sql`${proposals.state} in ('accepted', 'dismissed')`))
       .get()?.n ?? 0;
 
   const list: ProposalDTO[] = rows.map((r) => ({

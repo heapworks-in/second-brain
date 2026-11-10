@@ -36,6 +36,9 @@ const DEFAULT_WEIGHTS: Record<ProposalKind, number> = {
   meeting_unprepared: 1,
   // Cheap to answer and the only thing standing between a recorded commitment and a lost one.
   commitment_unbooked: 0.9,
+  // The only kind here whose cost is paid by somebody else's week, and the only one that gets
+  // worse on its own while nothing happens.
+  commitment_owed: 0.85,
   prediction_due: 0.8,
   task_overrun: 0.7,
   task_stalled: 0.6,

@@ -118,6 +118,7 @@ export function TaskList({ containerId, initialTasks, onProgress, onTasks, today
       if (parsed.dueDate) body.dueDate = parsed.dueDate;
       if (parsed.estimateMinutes !== null) body.estimateMinutes = parsed.estimateMinutes;
       if (parsed.sessionMinutes !== null) body.sessionMinutes = parsed.sessionMinutes;
+      if (parsed.requesterHandle) body.requesterHandle = parsed.requesterHandle;
       const res = await fetch("/api/tasks", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
       if (!res.ok) {
         setError(SAVE_ERROR);
@@ -206,6 +207,22 @@ export function TaskList({ containerId, initialTasks, onProgress, onTasks, today
       (prev) => prev.map((t) => (t.id === id ? { ...t, dueDate } : t)),
       () => fetch(`/api/tasks/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ dueDate }) }),
     );
+  }
+
+  /**
+   * Who is waiting, from the row's own picker. Not optimistic, unlike the other edits here: the
+   * row needs the person's *name* and only the server's answer carries it, so a guessed update
+   * would flash the wrong chip -- or no chip -- before the real one landed.
+   */
+  async function setRequester(id: number, requesterPersonId: number | null) {
+    const res = await fetch(`/api/tasks/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ requesterPersonId }) });
+    if (!res.ok) {
+      setError(SAVE_ERROR);
+      return;
+    }
+    const task = (await res.json()) as TaskDTO;
+    setTasks((prev) => prev.map((t) => (t.id === id ? task : t)));
+    setError(null);
   }
 
   function setEstimate(id: number, estimateMinutes: number | null) {
@@ -307,6 +324,7 @@ export function TaskList({ containerId, initialTasks, onProgress, onTasks, today
               onToggle={() => toggle(task)}
               onRename={(title) => rename(task.id, title)}
               onDue={(value) => setDue(task.id, value)}
+              onRequester={(personId) => void setRequester(task.id, personId)}
               onEstimate={(m) => setEstimate(task.id, m)}
               onPriority={(priority) => setPriority(task.id, priority)}
               onDrop={() => drop(task.id)}
@@ -341,6 +359,7 @@ export function TaskList({ containerId, initialTasks, onProgress, onTasks, today
                   onToggle={() => toggle(task)}
                   onRename={(title) => rename(task.id, title)}
                   onDue={(value) => setDue(task.id, value)}
+                  onRequester={(personId) => void setRequester(task.id, personId)}
                   onEstimate={(m) => setEstimate(task.id, m)}
                   onPriority={(priority) => setPriority(task.id, priority)}
                   onDrop={() => drop(task.id)}

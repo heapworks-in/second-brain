@@ -17,7 +17,7 @@ afterEach(() => {
 const TODAY = "2026-09-23";
 let id = 1;
 const task = (title: string, dueDate: string | null = null): TaskDTO => ({
-  id: id++, title, notes: "", status: "open", priority: "normal", dueDate, containerId: null, sourceItemId: null, completedAt: null,
+  id: id++, title, notes: "", status: "open", priority: "normal", dueDate, containerId: null, sourceItemId: null, requester: null, askedOn: null, completedAt: null,
   sortOrder: 0, estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0, likeThisMinutes: null, createdAt: "2026-09-22T09:00:00.000Z", updatedAt: "2026-09-22T09:00:00.000Z",
 });
 const late = task("Late", "2026-09-20");
@@ -30,7 +30,7 @@ function day(over: Partial<PlannerDayDTO> = {}): PlannerDayDTO {
   return {
     date: TODAY, plan: [], unfinishedYesterday: [left], meetings: [],
     calendar: { calendarsSeen: 1, permission: true },
-    sources: { inbox: [], due: { overdue: [late], today: [due] }, projects: [PROJECT], areas: [] },
+    sources: { owed: [], inbox: [], due: { overdue: [late], today: [due] }, projects: [PROJECT], areas: [] },
     capacity: { freeMinutes: 540, plannedMinutes: 0, unestimated: 0, workHours: "09:00-18:00", workingDays: [1, 2, 3, 4, 5], blockedMinutes: 0, unplacedMinutes: 0, drift: null, forecastMinutes: null, leftTodayMinutes: 540 },
     ...over,
   };
@@ -82,7 +82,7 @@ describe("RitualStrip", () => {
 
   it("leaves the due step out when nothing is due", () => {
     stub();
-    const empty = { inbox: [], due: { overdue: [], today: [] }, projects: [PROJECT], areas: [] };
+    const empty = { inbox: [], owed: [], due: { overdue: [], today: [] }, projects: [PROJECT], areas: [] };
     render(<RitualStrip day={day({ sources: empty })} today={TODAY} onStarted={vi.fn()} onDone={vi.fn()} />);
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Plan all" })).toBeNull();
@@ -95,7 +95,7 @@ describe("RitualStrip", () => {
     await waitFor(() => expect(posts).toHaveLength(2));
 
     // Everything due is on the plan now, so the reloaded day carries none of it.
-    const empty = { inbox: [], due: { overdue: [], today: [] }, projects: [PROJECT], areas: [] };
+    const empty = { inbox: [], owed: [], due: { overdue: [], today: [] }, projects: [PROJECT], areas: [] };
     rerender(<RitualStrip day={day({ unfinishedYesterday: [], sources: empty })} today={TODAY} onStarted={vi.fn()} onDone={vi.fn()} />);
     const steps = screen.getAllByRole("listitem");
     expect(steps).toHaveLength(2);
@@ -109,7 +109,7 @@ describe("RitualStrip", () => {
   it("plans the oldest overdue first, then what falls due on the day", async () => {
     const posts = stub();
     const older = task("Older", "2026-09-18");
-    const sources = { inbox: [], due: { overdue: [late, older], today: [due] }, projects: [], areas: [] };
+    const sources = { inbox: [], owed: [], due: { overdue: [late, older], today: [due] }, projects: [], areas: [] };
     render(<RitualStrip day={day({ unfinishedYesterday: [], sources })} today={TODAY} onStarted={vi.fn()} onDone={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Plan all" }));
     await waitFor(() => expect(posts.map((p) => (p.body as { taskId: number }).taskId)).toEqual([older.id, late.id, due.id]));

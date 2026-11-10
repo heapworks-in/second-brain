@@ -9,9 +9,13 @@ interface Props {
   selected: number[];
   onChange: (ids: number[]) => void;
   onClose: () => void;
+  /** What the picker says it is choosing for. Defaults to the attendee case it was written for. */
+  title?: string;
+  /** One person, not a set: choosing closes the picker, because there is nothing left to say. */
+  single?: boolean;
 }
 
-export function PeoplePicker({ selected, onChange, onClose }: Props) {
+export function PeoplePicker({ selected, onChange, onClose, title = "People on this item", single }: Props) {
   const [all, setAll] = useState<PersonDTO[]>([]);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,6 +41,12 @@ export function PeoplePicker({ selected, onChange, onClose }: Props) {
   const exact = options.some((p) => p.name.toLowerCase() === q);
 
   function toggle(id: number) {
+    if (single) {
+      setSelectedIds([id]);
+      onChange([id]);
+      onClose();
+      return;
+    }
     const next = selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id];
     setSelectedIds(next);
     onChange(next);
@@ -50,10 +60,11 @@ export function PeoplePicker({ selected, onChange, onClose }: Props) {
       if (res.ok) {
         const p = (await res.json()) as PersonDTO;
         setAll((a) => [...a, p]);
-        const next = [...selectedIds, p.id];
+        const next = single ? [p.id] : [...selectedIds, p.id];
         setSelectedIds(next);
         onChange(next);
         setQuery("");
+        if (single) onClose();
       }
     } finally {
       setBusy(false);
@@ -65,7 +76,7 @@ export function PeoplePicker({ selected, onChange, onClose }: Props) {
       <div className="panel w-[480px] max-w-[92vw] rounded-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="px-4 h-10 flex items-center gap-2 text-[13px] text-fg-muted border-b border-hairline">
           <Users className="w-4 h-4 text-fg-muted shrink-0" aria-hidden />
-          People on this item
+          {title}
         </div>
         <input
           ref={inputRef}

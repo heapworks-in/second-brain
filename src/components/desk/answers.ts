@@ -19,6 +19,7 @@ export const PRIMARY_LABELS: Record<ProposalKind, string> = {
   prediction_due: "Resolve it",
   capture_unfiled: "File it",
   commitment_unbooked: "Book it",
+  commitment_owed: "Plan it for today",
 };
 
 /** Said once, under the evidence, when the kind has been refused enough to be worth admitting

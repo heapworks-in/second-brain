@@ -121,6 +121,28 @@ function commit(db: DB, proposal: Proposal, now: Date): { label: string; href?: 
       };
     }
 
+    case "commitment_owed": {
+      const p = payloadOf<{ taskId: number; personName: string }>(proposal);
+      const today = localDay(now.toISOString());
+      const task = getTask(db, p.taskId);
+      if (!task) throw new DeskError("That task is no longer there", 404);
+      // Already on today's plan is not an error worth stopping for -- the answer the card asks
+      // for is "today holds this", and it does. The undo then has nothing to take back.
+      const already = db
+        .select({ id: dailyPlanEntries.id })
+        .from(dailyPlanEntries)
+        .where(and(eq(dailyPlanEntries.taskId, p.taskId), eq(dailyPlanEntries.date, today)))
+        .get();
+      if (!already) addToPlan(db, today, p.taskId);
+      return {
+        label: already ? "Already on today's plan" : `Planned for today${p.personName ? ` for ${p.personName}` : ""}`,
+        href: "/planner",
+        undo: () => {
+          if (!already) removeFromPlan(db, today, p.taskId);
+        },
+      };
+    }
+
     case "prediction_due": {
       const p = payloadOf<{ predictionId: number }>(proposal);
       return { label: "Opened to resolve", href: `/log?resolve=${p.predictionId}`, undo: () => {} };

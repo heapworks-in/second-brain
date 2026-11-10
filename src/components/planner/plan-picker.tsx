@@ -14,8 +14,10 @@ const SUGGESTION_CAP = 8;
 /** A search shows this many matches at most; a longer list is a narrower search away. */
 const MATCH_CAP = 20;
 
-export type PickerFilter = "due" | "inbox" | "projects" | "areas";
+export type PickerFilter = "owed" | "due" | "inbox" | "projects" | "areas";
 const FILTERS: { id: PickerFilter; label: string }[] = [
+  // First, and before "Due", because somebody else's wait outranks my own dates.
+  { id: "owed", label: "Owed" },
   { id: "due", label: "Due" },
   { id: "inbox", label: "Inbox" },
   { id: "projects", label: "Projects" },
@@ -62,6 +64,7 @@ export function PlanPicker({ day, today }: Props) {
     const unplanned = (list: TaskDTO[]) => list.filter((t) => !plannedIds.has(t.id));
     const q = query.trim().toLowerCase();
     const homes: { key: string; label: string; tasks: TaskDTO[] }[] = [
+      { key: "owed", label: "Owed", tasks: unplanned(sources.owed) },
       { key: "inbox", label: "Inbox", tasks: unplanned(sources.inbox) },
       ...sources.projects.map((g) => ({ key: `project-${g.container.id}`, label: g.container.name, tasks: unplanned(g.tasks) })),
       ...sources.areas.map((g) => ({ key: `area-${g.container.id}`, label: g.container.name, tasks: unplanned(g.tasks) })),
@@ -81,6 +84,8 @@ export function PlanPicker({ day, today }: Props) {
       return out;
     }
     switch (filter) {
+      case "owed":
+        return [toGroup("owed", "Owed", unplanned(sources.owed))];
       case "due":
         return [toGroup("due", "Due", unplanned([...sources.due.overdue, ...sources.due.today]))];
       case "inbox":
@@ -90,11 +95,16 @@ export function PlanPicker({ day, today }: Props) {
       case "areas":
         return sources.areas.map((g) => toGroup(`area-${g.container.id}`, g.container.name, unplanned(g.tasks)));
       default: {
-        const due = unplanned([...sources.due.overdue, ...sources.due.today]).slice(0, SUGGESTION_CAP);
-        // An overdue task that sat on yesterday's plan is in both lists; it is offered once.
-        const seen = new Set(due.map((t) => t.id));
-        const left = unplanned(day.unfinishedYesterday.filter((t) => !seen.has(t.id))).slice(0, Math.max(0, SUGGESTION_CAP - due.length));
+        // Owed leads: these are the only suggestions whose cost of waiting another day is
+        // somebody else's. Each list then drops what an earlier one already offered, so a task
+        // somebody is waiting on that is also overdue is named once, at the top.
+        const owed = unplanned(sources.owed).slice(0, SUGGESTION_CAP);
+        const seen = new Set(owed.map((t) => t.id));
+        const due = unplanned([...sources.due.overdue, ...sources.due.today].filter((t) => !seen.has(t.id))).slice(0, Math.max(0, SUGGESTION_CAP - owed.length));
+        for (const t of due) seen.add(t.id);
+        const left = unplanned(day.unfinishedYesterday.filter((t) => !seen.has(t.id))).slice(0, Math.max(0, SUGGESTION_CAP - owed.length - due.length));
         return [
+          ...(owed.length ? [toGroup("owed", "Owed", owed)] : []),
           ...(due.length ? [toGroup("due", "Due", due)] : []),
           ...(left.length ? [toGroup("yesterday", "From yesterday", left)] : []),
         ];
@@ -151,6 +161,7 @@ export function PlanPicker({ day, today }: Props) {
         const body: Record<string, unknown> = { title: parsed.title, priority: parsed.priority, dueDate: parsed.dueDate };
         if (parsed.estimateMinutes !== null) body.estimateMinutes = parsed.estimateMinutes;
         if (parsed.sessionMinutes !== null) body.sessionMinutes = parsed.sessionMinutes;
+        if (parsed.requesterHandle) body.requesterHandle = parsed.requesterHandle;
         const res = await post("/api/tasks", body);
         if (!res.ok) throw new Error("create");
         taskId = ((await res.json()) as { id: number }).id;

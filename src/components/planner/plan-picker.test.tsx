@@ -13,7 +13,7 @@ const TODAY = "2026-09-23";
 let nextId = 1;
 function task(over: Partial<TaskDTO> & { title: string }): TaskDTO {
   return {
-    id: nextId++, notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null,
+    id: nextId++, notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null, requester: null, askedOn: null,
     estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0, likeThisMinutes: null, completedAt: null, sortOrder: 0, createdAt: "2026-09-22T09:00:00.000Z", updatedAt: "2026-09-22T09:00:00.000Z", ...over,
   };
 }
@@ -33,7 +33,7 @@ function day(over: Partial<PlannerDayDTO> = {}): PlannerDayDTO {
     unfinishedYesterday: [leftover, planned],
     meetings: [],
     calendar: { calendarsSeen: 1, permission: true },
-    sources: { inbox: [loose], due: { overdue: [late], today: [] }, projects: [{ container: launch, tasks: [late, ship, planned] }], areas: [{ container: health, tasks: [walk] }] },
+    sources: { owed: [], inbox: [loose], due: { overdue: [late], today: [] }, projects: [{ container: launch, tasks: [late, ship, planned] }], areas: [{ container: health, tasks: [walk] }] },
     capacity: { freeMinutes: 540, plannedMinutes: 0, unestimated: 0, workHours: "09:00-18:00", workingDays: [1, 2, 3, 4, 5], blockedMinutes: 0, unplacedMinutes: 0, drift: null, forecastMinutes: null, leftTodayMinutes: 540 },
     ...over,
   };
@@ -72,6 +72,30 @@ describe("PlanPicker", () => {
     expect(events).toEqual(["plan"]);
     expect(screen.getByRole("listbox")).toBeTruthy();
     expect(document.activeElement).toBe(field());
+  });
+
+  it("leads with what somebody is waiting on, and names a task once though it is also overdue", async () => {
+    const posts = stub();
+    const owedLate = task({ title: "Owed and late", dueDate: "2026-09-20", requester: { id: 9, name: "Priya Raman", slug: "priya-raman" }, askedOn: "2026-09-16" });
+    render(<PlanPicker day={day({ sources: { ...day().sources, owed: [owedLate], due: { overdue: [owedLate, late], today: [] } } })} today={TODAY} />);
+    fireEvent.focus(field());
+    const list = screen.getByRole("listbox", { name: "Tasks to plan" });
+    expect(within(list).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["Owed", "Due", "From yesterday"]);
+    expect(within(within(list).getAllByRole("group")[0]).getAllByRole("option")).toHaveLength(1);
+    // Offered under Owed, so Due carries only the other overdue task.
+    expect(within(within(list).getAllByRole("group")[1]).getAllByRole("option").map((o) => o.textContent)).toEqual([expect.stringContaining("Late one")]);
+    // Enter takes the first option, which is now the one somebody is waiting on.
+    fireEvent.keyDown(field(), { key: "Enter" });
+    await waitFor(() => expect(posts).toEqual([{ url: "/api/plan", body: { date: TODAY, taskId: owedLate.id } }]));
+  });
+
+  it("browses the owed chip on its own", () => {
+    stub();
+    const owed = task({ title: "Unblock the review", requester: { id: 9, name: "Priya Raman", slug: "priya-raman" }, askedOn: "2026-09-16" });
+    render(<PlanPicker day={day({ sources: { ...day().sources, owed: [owed] } })} today={TODAY} />);
+    fireEvent.focus(field());
+    fireEvent.click(screen.getByRole("button", { name: "Owed" }));
+    expect(within(screen.getByRole("listbox")).getAllByRole("option").map((o) => o.textContent)).toEqual([expect.stringContaining("Unblock the review")]);
   });
 
   it("searches every home as you type, groups by home, and plans the arrowed row", async () => {
@@ -145,7 +169,7 @@ describe("PlanPicker", () => {
 
   it("says so when there is nothing to suggest", () => {
     stub();
-    render(<PlanPicker day={day({ unfinishedYesterday: [], sources: { inbox: [], due: { overdue: [], today: [] }, projects: [], areas: [] } })} today={TODAY} />);
+    render(<PlanPicker day={day({ unfinishedYesterday: [], sources: { owed: [], inbox: [], due: { overdue: [], today: [] }, projects: [], areas: [] } })} today={TODAY} />);
     fireEvent.focus(field());
     expect(screen.getByText(/Nothing due and nothing left from yesterday/)).toBeTruthy();
   });

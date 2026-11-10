@@ -7,7 +7,7 @@ import { domainOf } from "@/lib/text";
 import { getItemTags, parseMeta } from "@/domain/items";
 import { CaptureError, DuplicateError } from "@/domain/items/capture";
 import { getContainer, countContainerItems, ContainerError } from "@/domain/containers";
-import { getItemPeople, PersonError } from "@/domain/people";
+import { getItemPeople, peopleByIds, PersonError } from "@/domain/people";
 import { ActivityError } from "@/domain/activity/rules";
 import { MeetingError } from "@/domain/meetings/errors";
 import { effectiveDecisionAsOf, seriesDecisionDetailsFor } from "@/domain/meetings/decision";
@@ -23,7 +23,7 @@ import { DeskError } from "@/domain/desk/decide";
 import { addDays, localDay } from "@/domain/activity";
 import { isInterview, parseAttendeeNames } from "@/domain/activity/calendar";
 import type { Distillation } from "@/domain/distill";
-import type { ActivityMeetingDTO, BlockDTO, ItemDTO, ContainerDTO, PersonDTO, TaskDTO, PlanTaskDTO, PinnedLinkDTO, GoalDTO, GoalDetailDTO, GoalRefDTO, FocusRunDTO, PredictionDTO } from "./dto";
+import type { ActivityMeetingDTO, BlockDTO, ItemDTO, ContainerDTO, PersonDTO, PersonRefDTO, TaskDTO, PlanTaskDTO, PinnedLinkDTO, GoalDTO, GoalDetailDTO, GoalRefDTO, FocusRunDTO, PredictionDTO } from "./dto";
 
 export function serializeItem(db: DB, item: Item): ItemDTO {
   const container = item.containerId ? getContainer(db, item.containerId) : undefined;
@@ -155,7 +155,14 @@ function blocksWithSpent(db: DB, taskIds: number[], window: { from: string; to: 
 /** A task, its sessions, the active goals its container serves, what it has cost so far, and
  * what finished work like it cost. All four are passed in rather than read here, so a list pays
  * for one query each instead of one per row. */
-export function serializeTask(t: Task, blocks: BlockRow[] = [], goals: GoalRefDTO[] = [], spentMinutes = 0, likeThisMinutes: number | null = null): TaskDTO {
+export function serializeTask(
+  t: Task,
+  blocks: BlockRow[] = [],
+  goals: GoalRefDTO[] = [],
+  spentMinutes = 0,
+  likeThisMinutes: number | null = null,
+  requester: PersonRefDTO | null = null,
+): TaskDTO {
   return {
     id: t.id,
     title: t.title,
@@ -165,6 +172,8 @@ export function serializeTask(t: Task, blocks: BlockRow[] = [], goals: GoalRefDT
     dueDate: t.dueDate,
     containerId: t.containerId,
     sourceItemId: t.sourceItemId,
+    requester,
+    askedOn: t.askedOn,
     estimateMinutes: t.estimateMinutes,
     sessionMinutes: t.sessionMinutes,
     blocks: blocks.map(serializeBlock),
@@ -185,8 +194,9 @@ export function serializePlanTask(
   goals: GoalRefDTO[] = [],
   spentMinutes = 0,
   likeThisMinutes: number | null = null,
+  requester: PersonRefDTO | null = null,
 ): PlanTaskDTO {
-  return { ...serializeTask(t, blocks, goals, spentMinutes, likeThisMinutes), sortOrder: t.sortOrder, planId: t.planId };
+  return { ...serializeTask(t, blocks, goals, spentMinutes, likeThisMinutes, requester), sortOrder: t.sortOrder, planId: t.planId };
 }
 
 /** How many days either side of today a task list carries sessions for: last week, because a
@@ -213,12 +223,32 @@ function goalsByTask(db: DB, list: { id: number; containerId: number | null }[])
 /** A list of tasks with their sessions, goals, spent minutes and like-this minutes, in one query
  * each for the lot — never one per row. The window bounds what each row carries: without one a
  * task placed every day for a year would serialize all of it. */
+/** Every listed task's requester in one query, as a ref -- a task points at one person, so this
+ * is a lookup by id rather than the item/people join `serializeItem` walks. */
+function requestersByTask(db: DB, list: Task[]): Map<number, PersonRefDTO> {
+  const named = list.filter((t) => t.requesterPersonId !== null);
+  if (named.length === 0) return new Map();
+  const byId = peopleByIds(db, named.map((t) => t.requesterPersonId!));
+  const out = new Map<number, PersonRefDTO>();
+  for (const t of named) {
+    const p = byId.get(t.requesterPersonId!);
+    if (p) out.set(t.id, { id: p.id, name: p.name, slug: p.slug });
+  }
+  return out;
+}
+
+/** One task's requester, for the single-row routes. A list uses `requestersByTask` instead. */
+export function requesterRef(db: DB, t: Task): PersonRefDTO | null {
+  return requestersByTask(db, [t]).get(t.id) ?? null;
+}
+
 export function serializeTasks(db: DB, list: Task[], window: { from: string; to: string } = taskBlockWindow()): TaskDTO[] {
   const byTask = blocksWithSpent(db, list.map((t) => t.id), window);
   const goals = goalsByTask(db, list);
   const spent = focusMinutesByTask(db, list.map((t) => t.id));
   const likeThis = likeThisMinutesByTask(db, list);
-  return list.map((t) => serializeTask(t, byTask.get(t.id) ?? [], goals.get(t.id) ?? [], spent.get(t.id) ?? 0, likeThis.get(t.id) ?? null));
+  const requesters = requestersByTask(db, list);
+  return list.map((t) => serializeTask(t, byTask.get(t.id) ?? [], goals.get(t.id) ?? [], spent.get(t.id) ?? 0, likeThis.get(t.id) ?? null, requesters.get(t.id) ?? null));
 }
 
 /** A day's plan with its sessions, goals, spent minutes and like-this minutes, in one query
@@ -232,7 +262,8 @@ export function serializePlanTasks(
   const goals = goalsByTask(db, list);
   const spent = focusMinutesByTask(db, list.map((t) => t.id));
   const likeThis = likeThisMinutesByTask(db, list);
-  return list.map((t) => serializePlanTask(t, byTask.get(t.id) ?? [], goals.get(t.id) ?? [], spent.get(t.id) ?? 0, likeThis.get(t.id) ?? null));
+  const requesters = requestersByTask(db, list);
+  return list.map((t) => serializePlanTask(t, byTask.get(t.id) ?? [], goals.get(t.id) ?? [], spent.get(t.id) ?? 0, likeThis.get(t.id) ?? null, requesters.get(t.id) ?? null));
 }
 
 /**

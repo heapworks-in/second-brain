@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { createContainer, deleteContainer } from "@/domain/containers";
 import { createItem } from "@/domain/items";
+import { createPerson, deletePerson } from "@/domain/people";
 import {
   createTask, getTask, listTasks, updateTask, completeTask, reopenTask, dropTask, deleteTask, reorderTasks, projectProgress, containerProgress, TaskError,
 } from "./index";
@@ -130,5 +131,66 @@ describe("tasks domain", () => {
     expect(() => updateTask(t.db, task.id, { sessionMinutes: 10 })).toThrow(/15 and 480/);
     expect(() => updateTask(t.db, task.id, { sessionMinutes: 481 })).toThrow(/15 and 480/);
     expect(() => createTask(t.db, { title: "x", sessionMinutes: 45.5 })).toThrow(/15 and 480/);
+  });
+
+  describe("who is waiting", () => {
+    it("resolves an @handle to a person and dates the ask today", () => {
+      const priya = createPerson(t.db, { name: "Priya Raman" });
+      expect(priya.slug).toBe("priya-raman");
+      const task = createTask(t.db, { title: "@priya unblock the schema review", requesterHandle: "priya" });
+      expect(task.requesterPersonId).toBe(priya.id);
+      expect(task.askedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(listTasks(t.db, { requester: priya.id })).toHaveLength(1);
+      expect(listTasks(t.db, { requester: "any" })).toHaveLength(1);
+    });
+
+    it("takes a shorter handle while it names exactly one person", () => {
+      const priya = createPerson(t.db, { name: "Priya Raman" });
+      // Nobody types the whole slug, so a prefix resolves -- until it is ambiguous, when it
+      // resolves to nobody rather than to a coin toss.
+      expect(createTask(t.db, { title: "@priya look", requesterHandle: "priya" }).requesterPersonId).toBe(priya.id);
+      createPerson(t.db, { name: "Priya Shah" });
+      expect(createTask(t.db, { title: "@priya look again", requesterHandle: "priya" }).requesterPersonId).toBeNull();
+    });
+
+    it("ignores a handle that matches nobody rather than guessing or creating one", () => {
+      const task = createTask(t.db, { title: "@nobody look at this", requesterHandle: "nobody" });
+      expect(task.requesterPersonId).toBeNull();
+      expect(task.askedOn).toBeNull();
+    });
+
+    it("keeps the day they actually asked when the caller knows it", () => {
+      const priya = createPerson(t.db, { name: "Priya Raman" });
+      const task = createTask(t.db, { title: "Review the plan", requesterPersonId: priya.id, askedOn: "2026-11-02" });
+      expect(task.askedOn).toBe("2026-11-02");
+    });
+
+    it("starts the clock when a requester is named later, and stops it when cleared", () => {
+      const priya = createPerson(t.db, { name: "Priya Raman" });
+      const task = createTask(t.db, { title: "Review the plan" });
+      const named = updateTask(t.db, task.id, { requesterPersonId: priya.id });
+      expect(named.askedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // Re-naming the same person must not restart a wait that has been running for days.
+      const again = updateTask(t.db, task.id, { requesterPersonId: priya.id, askedOn: "2026-10-01" });
+      expect(again.askedOn).toBe("2026-10-01");
+      const cleared = updateTask(t.db, task.id, { requesterPersonId: null });
+      expect(cleared.requesterPersonId).toBeNull();
+      expect(cleared.askedOn).toBeNull();
+    });
+
+    it("refuses a requester who does not exist, and a wait with nobody waiting", () => {
+      expect(() => createTask(t.db, { title: "x", requesterPersonId: 999 })).toThrow(/Person 999 not found/);
+      const task = createTask(t.db, { title: "Mine alone" });
+      expect(() => updateTask(t.db, task.id, { askedOn: "2026-11-02" })).toThrow(/Nobody is waiting/);
+    });
+
+    /** Deleting a person is a thing the people page offers, and it must not be blocked by, or
+     * take with it, a task that happens to carry their name. */
+    it("forgets a deleted person without losing the task", () => {
+      const priya = createPerson(t.db, { name: "Priya Raman" });
+      const task = createTask(t.db, { title: "Review the plan", requesterPersonId: priya.id });
+      deletePerson(t.db, priya.id);
+      expect(getTask(t.db, task.id)?.requesterPersonId).toBeNull();
+    });
   });
 });

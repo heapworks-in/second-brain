@@ -10,7 +10,7 @@ const NO_FOCUS: HomeDTO["focus"] = { minutes: 0, running: null };
 const FOCUS_SETTINGS: FocusSettingsDTO = { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4, mode: "pomodoro" };
 
 const planTask = (over: Partial<PlanTaskDTO> = {}): PlanTaskDTO => ({
-  id: 7, title: "Write the brief", notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null,
+  id: 7, title: "Write the brief", notes: "", status: "open", priority: "normal", dueDate: null, containerId: null, sourceItemId: null, requester: null, askedOn: null,
   estimateMinutes: 60, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0, likeThisMinutes: null, completedAt: null, sortOrder: 0, createdAt: "", updatedAt: "", planId: 1,
   ...over,
 });
@@ -22,7 +22,7 @@ function day(over: Partial<PlannerDayDTO> = {}): PlannerDayDTO {
     unfinishedYesterday: [],
     meetings: [],
     calendar: { calendarsSeen: 2, permission: true },
-    sources: { inbox: [], due: { overdue: [], today: [] }, projects: [], areas: [] },
+    sources: { owed: [], inbox: [], due: { overdue: [], today: [] }, projects: [], areas: [] },
     capacity: { freeMinutes: 540, plannedMinutes: 60, unestimated: 0, workHours: "09:00-18:00", workingDays: [1, 2, 3, 4, 5], blockedMinutes: 0, unplacedMinutes: 60, drift: null, forecastMinutes: null, leftTodayMinutes: 540 },
     ...over,
   };

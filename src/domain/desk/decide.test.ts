@@ -157,6 +157,42 @@ describe("decideProposal", () => {
     });
   });
 
+
+  describe("commitment_owed", () => {
+    it("puts it on today's plan, naming the person, and undoing takes it off again", () => {
+      t = makeTestDb();
+      const task = t.db.insert(tasks).values({ title: "Review the migration plan", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() }).returning().get();
+      const p = open({ kind: "commitment_owed", payload: { taskId: task.id, personName: "Priya Raman" } });
+
+      const decided = decideProposal(t.db, p.id, "accept", NOW);
+      expect(decided.label).toBe("Planned for today for Priya Raman");
+      expect(decided.href).toBe("/planner");
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(1);
+      // The work itself is untouched: planning it is not doing it.
+      expect(getTask(t.db, task.id)!.status).toBe("open");
+
+      undoProposal(t.db, p.id);
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(0);
+    });
+
+    it("says so rather than failing when today already holds it, and the undo keeps it there", () => {
+      t = makeTestDb();
+      const task = t.db.insert(tasks).values({ title: "Review the migration plan", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() }).returning().get();
+      t.db.insert(dailyPlanEntries).values({ date: "2026-11-08", taskId: task.id, createdAt: NOW.toISOString() }).run();
+      const p = open({ kind: "commitment_owed", payload: { taskId: task.id, personName: "Priya Raman" } });
+
+      expect(decideProposal(t.db, p.id, "accept", NOW).label).toBe("Already on today's plan");
+      undoProposal(t.db, p.id);
+      // The undo reverses what the decision did, and it did nothing.
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(1);
+    });
+
+    it("refuses a task that has since been deleted", () => {
+      t = makeTestDb();
+      const p = open({ kind: "commitment_owed", payload: { taskId: 404, personName: "Priya Raman" } });
+      expect(() => decideProposal(t.db, p.id, "accept", NOW)).toThrow(/no longer there/);
+    });
+  });
   describe("prediction_due", () => {
     it("commits nothing and sends you where the answer can be given", () => {
       t = makeTestDb();

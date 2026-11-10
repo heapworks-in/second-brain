@@ -4,7 +4,7 @@ import { completeTask, deleteTask, dropTask, getTask, reopenTask, updateTask, Ta
 import { blocksByTask } from "@/domain/blocks";
 import { goalRefsByContainer } from "@/domain/goals";
 import { focusMinutesByTask, similarActualMinutes } from "@/domain/focus";
-import { errorResponse, parseId, serializeTask, taskBlockWindow } from "@/lib/api";
+import { errorResponse, parseId, requesterRef, serializeTask, taskBlockWindow } from "@/lib/api";
 import { PatchTaskBody } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export async function PATCH(req: Request, ctx: Ctx): Promise<Response> {
     const goals = task.containerId !== null ? (goalRefsByContainer(db, [task.containerId]).get(task.containerId) ?? []) : [];
     const spentMinutes = focusMinutesByTask(db, [id]).get(id) ?? 0;
     const likeThisMinutes = similarActualMinutes(db, task);
-    return NextResponse.json(serializeTask(task, blocksByTask(db, [id], taskBlockWindow()).get(id) ?? [], goals, spentMinutes, likeThisMinutes));
+    return NextResponse.json(serializeTask(task, blocksByTask(db, [id], taskBlockWindow()).get(id) ?? [], goals, spentMinutes, likeThisMinutes, requesterRef(db, task)));
   } catch (err) {
     return errorResponse(err);
   }

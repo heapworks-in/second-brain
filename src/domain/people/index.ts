@@ -2,7 +2,10 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { items, people, itemPeople, type Item, type Person } from "@/db/schema";
 import { slugify } from "@/domain/containers";
+import { extractMentions } from "@/lib/mentions";
 import { nowIso } from "@/lib/time";
+
+export { extractMentions } from "@/lib/mentions";
 
 export class PersonError extends Error {
   constructor(
@@ -135,6 +138,14 @@ export function getItemPeople(db: DB, itemId: number): Person[] {
     .all();
 }
 
+/** The named people, by id, in one query -- for a list of rows that each point at one person
+ * (a task's requester) rather than a row with a list of people (an item's attendees). */
+export function peopleByIds(db: DB, ids: number[]): Map<number, Person> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  return new Map(db.select().from(people).where(inArray(people.id, unique)).all().map((p) => [p.id, p]));
+}
+
 export function getPersonTimeline(db: DB, personId: number, includeArchived = false): Item[] {
   const ids = db
     .select({ itemId: itemPeople.itemId })
@@ -151,18 +162,6 @@ export function getPersonTimeline(db: DB, personId: number, includeArchived = fa
     .where(and(...conds))
     .orderBy(desc(items.createdAt), desc(items.id))
     .all();
-}
-
-const MENTION = /(^|[^\w@.])@([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu;
-
-/** Lowercased handles after `@`, excluding email addresses, in order of first appearance. */
-export function extractMentions(text: string): string[] {
-  const out: string[] = [];
-  for (const m of text.matchAll(MENTION)) {
-    const handle = m[2].toLowerCase().replace(/[.,;:!?]+$/, "");
-    if (handle && !out.includes(handle)) out.push(handle);
-  }
-  return out;
 }
 
 /** Link every `@handle` in the item body to a person whose slug matches. Never removes links. */

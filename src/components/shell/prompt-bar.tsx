@@ -145,6 +145,7 @@ export function PromptBar({
             dueDate: current.dueDate,
             estimateMinutes: current.estimateMinutes,
             ...(current.sessionMinutes !== null ? { sessionMinutes: current.sessionMinutes } : {}),
+            ...(current.requesterHandle ? { requesterHandle: current.requesterHandle } : {}),
             containerId,
           }),
         });

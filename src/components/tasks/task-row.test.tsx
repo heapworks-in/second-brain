@@ -10,7 +10,7 @@ import type { TaskDTO } from "@/lib/dto";
 afterEach(cleanup);
 
 const task: TaskDTO = {
-  id: 1, title: "Draft email", notes: "", status: "open", priority: "normal", dueDate: null, containerId: 5, sourceItemId: null,
+  id: 1, title: "Draft email", notes: "", status: "open", priority: "normal", dueDate: null, containerId: 5, sourceItemId: null, requester: null, askedOn: null,
   estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0, likeThisMinutes: null, completedAt: null, sortOrder: 0, createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z",
 };
 
@@ -27,6 +27,7 @@ interface ExtraProps {
   planLabel?: string;
   planned?: boolean;
   compact?: boolean;
+  onRequester?: (personId: number | null) => void;
 }
 
 function renderRow(extra: ExtraProps = {}, row: TaskDTO = task) {
@@ -713,5 +714,46 @@ describe("TaskRow planning from the menu", () => {
     });
     expect(onPlanDate).toHaveBeenCalled();
     expect(toasts).toHaveLength(1);
+  });
+});
+
+describe("TaskRow: who is waiting", () => {
+  const waiting: TaskDTO = { ...task, requester: { id: 9, name: "Priya Raman", slug: "priya-raman" }, askedOn: "2026-09-13" };
+
+  it("shows the person and how long they have waited", () => {
+    renderRow({}, waiting);
+    expect(screen.getByText(/Priya Raman/).textContent).toBe("Priya Raman · 3d");
+    expect(screen.getByTitle("Priya Raman has been waiting 3 days")).toBeTruthy();
+  });
+
+  it("names the person without a figure on the day they asked", () => {
+    renderRow({}, { ...waiting, askedOn: "2026-09-16" });
+    expect(screen.getByText("Priya Raman")).toBeTruthy();
+  });
+
+  it("says nothing once the task is done: the waiting is over", () => {
+    renderRow({}, { ...waiting, status: "done" });
+    expect(screen.queryByText(/Priya Raman/)).toBeNull();
+  });
+
+  it("offers the chip wherever the row is, but only offers to change it where it can be saved", () => {
+    renderRow({}, waiting);
+    expect(within(openMenuPanel()).queryByRole("menuitem", { name: /waiting/i })).toBeNull();
+    cleanup();
+    renderRow({ onRequester: vi.fn() }, waiting);
+    expect(within(openMenuPanel()).getByRole("menuitem", { name: "Nobody is waiting (clear Priya Raman)" })).toBeTruthy();
+  });
+
+  it("clears the requester straight from the menu, no picker in the way", () => {
+    const onRequester = vi.fn();
+    renderRow({ onRequester }, waiting);
+    fireEvent.click(within(openMenuPanel()).getByRole("menuitem", { name: /Nobody is waiting/ }));
+    expect(onRequester).toHaveBeenCalledWith(null);
+  });
+
+  it("opens the picker to name one when nobody is waiting yet", () => {
+    renderRow({ onRequester: vi.fn() });
+    fireEvent.click(within(openMenuPanel()).getByRole("menuitem", { name: "Waiting for…" }));
+    expect(screen.getByText("Who is waiting on this?")).toBeTruthy();
   });
 });

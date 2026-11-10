@@ -169,6 +169,13 @@
       "when": 1794138676393,
       "tag": "0023_desk_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1794334602962,
+      "tag": "0024_task_requester",
+      "breakpoints": true
     }
   ]
 }

@@ -40,6 +40,11 @@ export const TaskBody = z.object({
   sourceItemId: z.number().int().positive().nullable().optional(),
   estimateMinutes: z.number().int().min(5).max(480).nullable().optional(),
   sessionMinutes: z.number().int().min(15).max(480).nullable().optional(),
+  requesterPersonId: z.number().int().positive().nullable().optional(),
+  /** A `@handle` from the add-task box. Resolved against `people.slug`, and ignored when it
+   * matches nobody -- the handle is still in the title, so nothing is lost. */
+  requesterHandle: z.string().min(1).max(64).nullable().optional(),
+  askedOn: DateString.nullable().optional(),
 });
 export const PatchTaskBody = TaskBody.partial().omit({ sourceItemId: true }).extend({ status: z.enum(TASK_STATUSES).optional() }).strict();
 export const ReorderTasksBody = z.object({ containerId: z.number().int().positive().nullable(), ids: z.array(z.number().int().positive()) });

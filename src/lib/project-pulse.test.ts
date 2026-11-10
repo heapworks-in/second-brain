@@ -13,7 +13,7 @@ function task(over: Partial<TaskDTO> = {}): TaskDTO {
     priority: "normal",
     dueDate: null,
     containerId: 1,
-    sourceItemId: null,
+    sourceItemId: null, requester: null, askedOn: null,
     estimateMinutes: null,
     sessionMinutes: null,
     blocks: [],

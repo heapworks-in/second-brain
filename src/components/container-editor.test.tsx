@@ -361,7 +361,7 @@ describe("the project pulse", () => {
   function tasks(over: Partial<TaskDTO>[] = []): TaskDTO[] {
     const base: TaskDTO = {
       id: 1, title: "A task", notes: "", status: "open", priority: "normal", dueDate: null, containerId: 1,
-      sourceItemId: null, estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0,
+      sourceItemId: null, requester: null, askedOn: null, estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0,
       likeThisMinutes: null, completedAt: null, sortOrder: 0, createdAt: "", updatedAt: "",
     };
     return over.map((o, i) => ({ ...base, id: 10 + i, ...o }));

@@ -9,7 +9,7 @@ const t = (id: number, dueDate: string | null) => ({
   priority: "normal" as const,
   dueDate,
   containerId: null,
-  sourceItemId: null,
+  sourceItemId: null, requester: null, askedOn: null,
   estimateMinutes: null,
   sessionMinutes: null, blocks: [],
   goals: [],

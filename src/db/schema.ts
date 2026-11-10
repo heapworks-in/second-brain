@@ -340,6 +340,16 @@ export const tasks = sqliteTable(
     /** How long each placed session should be; null means the default sizing (spec §2). */
     sessionMinutes: integer("session_minutes"),
     completedAt: text("completed_at"),
+    /**
+     * Who asked for this, when somebody did -- the person waiting on it. The direction is never
+     * stored: whoever is not the owner is the one waiting, so the two readings of a shared task
+     * ("Priya is waiting on me" / "I am waiting on Priya") cannot contradict each other.
+     */
+    requesterPersonId: integer("requester_person_id").references(() => people.id, { onDelete: "set null" }),
+    /** The day they asked, which is not the day it was written down: the wait is measured from
+     * the ask. Its own column for the same reason `droppedAt` is one -- `createdAt` moves with
+     * the capture, and most of these tasks will never have a due date to fall back on. */
+    askedOn: text("asked_on"),
     /** The instant a drop happened — its own column because `updatedAt` moves on any later
      * edit, and a review of a past week must not have a task migrate into it because someone
      * touched the title months after. */

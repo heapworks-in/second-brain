@@ -1,6 +1,7 @@
 import type { DB } from "@/db/client";
 import type { Generator, ProposalDraft } from "../types";
 import { captureUnfiled } from "./capture-unfiled";
+import { commitmentOwed } from "./commitment-owed";
 import { commitmentUnbooked } from "./commitment-unbooked";
 import { decisionStale } from "./decision-stale";
 import { meetingUnprepared } from "./meeting-unprepared";
@@ -16,6 +17,7 @@ import { taskStalled } from "./task-stalled";
 export const GENERATORS: { name: string; run: Generator }[] = [
   { name: "meeting_unprepared", run: meetingUnprepared },
   { name: "commitment_unbooked", run: commitmentUnbooked },
+  { name: "commitment_owed", run: commitmentOwed },
   { name: "prediction_due", run: predictionDue },
   { name: "task_overrun", run: taskOverrun },
   { name: "task_stalled", run: taskStalled },

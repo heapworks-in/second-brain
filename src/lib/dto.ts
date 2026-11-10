@@ -86,6 +86,10 @@ export interface TaskDTO {
   dueDate: string | null;
   containerId: number | null;
   sourceItemId: number | null;
+  /** Who is waiting on this, when somebody asked for it; null for ordinary work of my own. */
+  requester: PersonRefDTO | null;
+  /** The day they asked, which is what the wait is measured from -- not `createdAt`. */
+  askedOn: string | null;
   estimateMinutes: number | null;
   /** How long each placed session should be; null leaves the sizing to the scheduler. */
   sessionMinutes: number | null;
@@ -151,6 +155,9 @@ export interface SourceGroupDTO {
 /** Every open task, by where it lives, for the plan picker. */
 export interface PlannerSourcesDTO {
   inbox: TaskDTO[];
+  /** Unplanned tasks somebody is waiting on, longest wait first. For these the wait is the
+   * deadline: almost none of them will ever carry a due date. */
+  owed: TaskDTO[];
   due: { overdue: TaskDTO[]; today: TaskDTO[] };
   projects: SourceGroupDTO[];
   areas: SourceGroupDTO[];
