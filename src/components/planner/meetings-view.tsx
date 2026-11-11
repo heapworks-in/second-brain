@@ -60,6 +60,12 @@ function matches(m: MeetingListDTO, q: string): boolean {
   return [m.title, m.organizer, ...m.attendeeNames].join(" ").toLowerCase().includes(q);
 }
 
+/** "15 Nov": enough to place a holiday in the month without a heading of its own. */
+function shortDay(startsAt: string): string {
+  const d = new Date(startsAt);
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
 function groupByDay(meetings: MeetingListDTO[]): Group[] {
   const groups = new Map<string, MeetingListDTO[]>();
   for (const m of meetings) {
@@ -121,6 +127,10 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
   const shown = applyFilter(searched, filter);
   const todays = shown.filter((m) => dayOf(m.startsAt) === today);
   const upcoming = groupByDay(shown.filter((m) => dayOf(m.startsAt) > today));
+  // A day that holds a meeting keeps its own card, all-day entries and all. A day that holds
+  // nothing but all-day entries has nothing to show a card for.
+  const upcomingDays = upcoming.filter((g) => g.meetings.some((m) => !m.allDay));
+  const allDayOnly = upcoming.filter((g) => g.meetings.every((m) => m.allDay));
   const past = groupByDay(shown.filter((m) => dayOf(m.startsAt) < today)).reverse();
 
   function open(id: number) {
@@ -372,7 +382,24 @@ export function MeetingsView({ today, meetings, containerId: containerFilter = n
       ) : (
         <>
           {group("Today", todays, "No meetings today")}
-          {upcoming.map((g) => group(g.label, g.meetings))}
+          {upcomingDays.map((g) => group(g.label, g.meetings))}
+          {/* A subscribed holiday calendar fills the next two months with days whose only entry
+            * is a holiday. Each one used to take a card of its own -- a heading, a chip, and the
+            * height of a meeting -- so six holidays pushed every real meeting below the fold.
+            * They are worth seeing and not worth a card each, so they share one. */}
+          {allDayOnly.length > 0 && (
+            <section className="pane p-2 flex flex-col gap-2">
+              <span className="micro px-1">All day</span>
+              <div className="flex items-center gap-1.5 flex-wrap px-1 pb-1">
+                {allDayOnly.flatMap((g) => g.meetings).map((m) => (
+                  <Chip key={m.id} onClick={() => open(m.id)} title={m.calendarTitle || undefined}>
+                    {m.title}
+                    <span className="text-fg-faint ml-1.5">{shortDay(m.startsAt)}</span>
+                  </Chip>
+                ))}
+              </div>
+            </section>
+          )}
 
           <details className="pane p-2">
             {/* "Past 30 days" is only true of the normal window; a `?container=` filter widens

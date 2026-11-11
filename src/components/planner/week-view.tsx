@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState, type DragEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PlannerWeekDTO, PlannerWeekDayDTO, TaskDTO } from "@/lib/dto";
 import type { TaskPriority } from "@/db/enums";
 import { CAPACITY_TONE_CLASS, capacityTone, formatMinutes, overBasis } from "@/lib/capacity";
 import { formatClock } from "../activity/format";
-import { List } from "../ui";
+import { Chip, List } from "../ui";
 import { TaskRow } from "../tasks/task-row";
 import { openMeeting } from "./open-meeting";
 
@@ -15,6 +16,9 @@ const SAVE_ERROR = "Could not save that change";
 /** The drag's own type, so a column only accepts a task dragged from another column. */
 const TASK_MIME = "text/task-id";
 const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/** Timed meetings a column shows before it offers the day instead. Four fits without scrolling
+ * beside a column's tasks; past that the column is a list nobody reads across seven of them. */
+const MEETING_CAP = 4;
 
 function weekdayOf(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -72,6 +76,8 @@ export function WeekView({ week, today, onRefresh }: { week: PlannerWeekDTO; tod
 
   function column(day: PlannerWeekDayDTO) {
     const isToday = day.date === today;
+    const allDay = day.meetings.filter((m) => m.allDay);
+    const timed = day.meetings.filter((m) => !m.allDay);
     return (
       <div
         key={day.date}
@@ -84,8 +90,13 @@ export function WeekView({ week, today, onRefresh }: { week: PlannerWeekDTO; tod
           <span className="micro">{weekdayOf(day.date)}</span>
         </span>
         {/* A day nobody works is a quiet gap: the date above, and nothing here about capacity —
-          * not "0h", not a struck-through nine hours. */}
-        {day.working && (() => {
+          * not "0h", not a struck-through nine hours.
+          *
+          * An empty working day is now quiet too. "0m / 9h" is true, but seven columns of it is
+          * six lines of noise around the one day that has anything in it, and a day with nothing
+          * planned already says so by being empty. The figure appears the moment there is
+          * something to measure, and always on today, where "what is left" is the live question. */}
+        {day.working && (day.capacity.plannedMinutes > 0 || isToday) && (() => {
           // Today and every day still ahead read `leftTodayMinutes`, the same honesty
           // `plannerDay` gives the day view — the remainder of today, or a day ahead's whole
           // window. A day already gone is different: `leftTodayMinutes` is 0 there by design
@@ -117,20 +128,46 @@ export function WeekView({ week, today, onRefresh }: { week: PlannerWeekDTO; tod
           );
         })()}
 
-        {day.meetings.length > 0 && (
+        {/* A holiday is not a meeting: nothing on it can be joined, recorded or prepared for, and
+          * a subscribed holiday calendar puts one in most weeks. As a row each one costs the same
+          * height as a real meeting and pushes it out of the column; as a chip it stays readable
+          * and stops competing. Same treatment the Meetings list already gives them. */}
+        {allDay.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {allDay.map((m) => (
+              <Chip key={m.id} onClick={() => openMeetingItem(m.id)} title={m.title}>
+                {m.title}
+              </Chip>
+            ))}
+          </div>
+        )}
+
+        {timed.length > 0 && (
           <ul role="list" className="list-none m-0 p-0 flex flex-col">
-            {day.meetings.map((m) => (
+            {timed.slice(0, MEETING_CAP).map((m) => (
               <li key={m.id}>
                 <button
                   type="button"
                   onClick={() => openMeetingItem(m.id)}
                   className="focus-ring w-full flex items-center gap-2 h-7 px-1 rounded-sm text-left hover:bg-layer-2 transition-colors"
                 >
-                  <span className="font-mono text-[11px] text-fg-faint shrink-0">{m.allDay ? "All day" : formatClock(m.startsAt)}</span>
+                  <span className="font-mono text-[11px] text-fg-faint shrink-0">{formatClock(m.startsAt)}</span>
                   <span className="truncate text-[12.5px]">{m.title}</span>
                 </button>
               </li>
             ))}
+            {/* A day with eleven meetings is a day you open, not a column you read. The overflow
+              * says how many rather than stacking them, and goes to the day that holds them. */}
+            {timed.length > MEETING_CAP && (
+              <li>
+                <Link
+                  href={`/planner?date=${day.date}`}
+                  className="focus-ring flex items-center h-7 px-1 rounded-sm text-[12px] text-fg-muted hover:text-violet-bright transition-colors"
+                >
+                  {timed.length - MEETING_CAP} more
+                </Link>
+              </li>
+            )}
           </ul>
         )}
 
@@ -159,9 +196,6 @@ export function WeekView({ week, today, onRefresh }: { week: PlannerWeekDTO; tod
           </List>
         )}
 
-        {/* Inside the working gate with the capacity span above: a non-working day is a quiet
-          * gap, not a card that still finds something to say (F6) — see the comment at :86. */}
-        {day.working && day.meetings.length === 0 && day.due.length === 0 && <p className="text-[12px] text-fg-faint m-0">Nothing yet</p>}
       </div>
     );
   }

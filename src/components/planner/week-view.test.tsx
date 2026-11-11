@@ -4,7 +4,7 @@ import { render, screen, fireEvent, cleanup, within } from "@testing-library/rea
 import { WeekView } from "./week-view";
 import { resetFocusStore } from "../focus/focus-store";
 import { PatchTaskBody } from "@/lib/validation";
-import type { PlannerWeekDTO, TaskDTO } from "@/lib/dto";
+import type { ActivityMeetingDTO, PlannerWeekDTO, TaskDTO } from "@/lib/dto";
 
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: nav.push, refresh: () => {} }), usePathname: () => "/planner/week" }));
@@ -16,6 +16,15 @@ const task: TaskDTO = {
   id: 4, title: "Draft email", notes: "", status: "open", priority: "normal", dueDate: START, containerId: null, sourceItemId: null, requester: null, askedOn: null,
   estimateMinutes: null, sessionMinutes: null, blocks: [], goals: [], spentMinutes: 0, likeThisMinutes: null, completedAt: null, sortOrder: 0, createdAt: "", updatedAt: "",
 };
+
+function meeting(over: Partial<ActivityMeetingDTO> & { id: number; title: string }): ActivityMeetingDTO {
+  return {
+    startsAt: "2026-09-23T09:00:00.000Z", endsAt: "2026-09-23T10:00:00.000Z", attendees: 3, hasCallLink: false, interview: false,
+    scheduledMs: 3_600_000, actualMs: 0, itemId: null, organizer: "", attendeeNames: [], location: "", joinUrl: null, allDay: false,
+    status: "accepted", calendarTitle: "Work", noRecord: false, seriesId: null, decision: "going", decisionNote: "", seriesDecision: null, containerId: null, containerFromSeries: false,
+    ...over,
+  };
+}
 
 function week(): PlannerWeekDTO {
   return {
@@ -154,10 +163,46 @@ describe("WeekView", () => {
     expect(within(sat).queryByText("Nothing yet")).toBeNull();
   });
 
-  it("says nothing yet on a working day with no meetings and nothing due", () => {
+  it("leaves an empty working day empty, rather than saying so seven times", () => {
     mount();
-    // Wednesday: working, no meetings, no due tasks.
-    expect(within(column("Wed")).getByText("Nothing yet")).toBeTruthy();
+    // Wednesday: working, no meetings, no due tasks. A column with nothing in it already reads
+    // as having nothing in it; the figure and the sentence were noise around the days that do.
+    const wed = within(column("Wed"));
+    expect(wed.queryByText("Nothing yet")).toBeNull();
+    expect(wed.queryByText(/0m/)).toBeNull();
+    // Monday has something planned, so it still carries its figure.
+    expect(within(column("Mon")).getByText(/1h 15m \/ 9h/)).toBeTruthy();
+  });
+
+  it("keeps the figure on today even with nothing planned: 'what is left' is a live question", () => {
+    const w = week();
+    w.days[2].capacity.plannedMinutes = 0;
+    render(<WeekView week={w} today="2026-09-23" onRefresh={vi.fn()} />);
+    expect(within(column("Wed")).getByText(/0m \/ 9h/)).toBeTruthy();
+  });
+
+  /** A subscribed holiday calendar puts an all-day entry in most weeks. As a row it costs the
+   * same height as a real meeting; as a chip it stops competing with one. */
+  it("shows an all-day entry as a chip, never as a row with a time", () => {
+    const w = week();
+    w.days[2].meetings = [meeting({ id: 5, title: "Chhath Puja", allDay: true, attendees: 0 })];
+    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
+    const wed = within(column("Wed"));
+    expect(wed.getByText("Chhath Puja")).toBeTruthy();
+    expect(wed.queryByText("All day")).toBeNull();
+    expect(wed.queryByRole("list")).toBeNull();
+  });
+
+  it("offers the day itself once a column holds more meetings than it can read", () => {
+    const w = week();
+    w.days[2].meetings = Array.from({ length: 7 }, (_, i) =>
+      meeting({ id: 100 + i, title: `Sync ${i + 1}`, startsAt: `2026-09-23T0${i + 2}:00:00.000Z` }),
+    );
+    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
+    const wed = within(column("Wed"));
+    expect(wed.getAllByRole("button").filter((b) => /Sync/.test(b.textContent ?? ""))).toHaveLength(4);
+    const more = wed.getByRole("link", { name: "3 more" });
+    expect(more.getAttribute("href")).toBe("/planner?date=2026-09-23");
   });
 
   it("keeps the blocked dot off a non-working day even when it has blocked minutes", () => {

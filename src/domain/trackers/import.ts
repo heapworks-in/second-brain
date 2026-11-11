@@ -1,9 +1,8 @@
 import { eq } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import type { TaskStatus } from "@/db/enums";
-import { tasks, trackers, type Task, type Tracker } from "@/db/schema";
-import { slugify } from "@/domain/containers";
-import { createContainer, listContainers } from "@/domain/containers";
+import { trackers, type Task, type Tracker } from "@/db/schema";
+import { createContainer, listContainers, slugify } from "@/domain/containers";
 import { createPerson, listPeople, updatePerson } from "@/domain/people";
 import { createTask, listTasks, updateTask } from "@/domain/tasks";
 import { nowIso } from "@/lib/time";

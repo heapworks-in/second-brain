@@ -379,4 +379,26 @@ describe("MeetingsView", () => {
       expect(screen.queryByText("Show all meetings")).toBeNull();
     });
   });
+
+  /** A subscribed holiday calendar is most of what the next two months hold here. */
+  it("gathers days that hold nothing but all-day entries into one block, dated", () => {
+    const holidays = [
+      meeting({ id: 10, title: "Chhath Puja", startsAt: "2026-11-15T00:00:00", endsAt: "2026-11-15T23:59:00", allDay: true, attendees: 0 }),
+      meeting({ id: 11, title: "Christmas Day", startsAt: "2026-12-25T00:00:00", endsAt: "2026-12-25T23:59:00", allDay: true, attendees: 0 }),
+    ];
+    render(<MeetingsView today={TODAY} meetings={[...MEETINGS, ...holidays]} />);
+
+    // One block for the pair, not a card each, and each chip says which day it is.
+    const block = screen.getByText("All day").closest("section") as HTMLElement;
+    expect(within(block).getByText("Chhath Puja").textContent).toContain("15 Nov");
+    expect(within(block).getByText("Christmas Day").textContent).toContain("25 Dec");
+    expect(screen.queryByText(/SUNDAY 15 NOVEMBER/i)).toBeNull();
+  });
+
+  it("leaves a day with a real meeting on it alone, all-day entries and all", () => {
+    const sameDay = meeting({ id: 12, title: "Company holiday", startsAt: "2026-09-23T00:00:00", endsAt: "2026-09-23T23:59:00", allDay: true, attendees: 0 });
+    render(<MeetingsView today={TODAY} meetings={[...MEETINGS, sameDay]} />);
+    const day = screen.getByText("Product sync").closest("section") as HTMLElement;
+    expect(within(day).getByText("Company holiday")).toBeTruthy();
+  });
 });
