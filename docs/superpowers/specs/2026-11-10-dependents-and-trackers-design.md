@@ -148,7 +148,25 @@ which names are me, and a count of what will be created, updated and skipped.
 - **Container-level rollups** ("3 people waiting on this project") wait for
   `ownerPersonId` to have a writer, in slice 2.
 
-## 9. Slices
+## 9. What was built, and where it differs
+
+Both slices shipped. Three things turned out differently once the code met a
+real file, and the spec says so rather than reading as though it predicted
+them:
+
+- **`parentLabel`, not `parentTaskId`.** In a real tracker the "Task" cell is
+  repeated (or merged) down the rows and has no row of its own, so a parent id
+  would have meant synthesising a task that belongs to nobody and still lands
+  in my lists. A label also round-trips to the file; an id cannot.
+- **Two cells needed somewhere to live.** An ETA that was never a date, and
+  the Team cell on a row of my own — which has no person behind it to read a
+  team off. Both ride in the row's stash of untouched columns, so an export is
+  not poorer than the file that made it.
+- **A handle resolves by unique prefix** after an exact slug match. Nobody
+  types `@priya-raman`; two Priyas resolve to nobody rather than to a coin
+  toss.
+
+## 10. Slices
 
 1. The two columns, `@handle` capture, the chip and picker, the
    `commitment_owed` card, `sources.owed`, the person page section.
