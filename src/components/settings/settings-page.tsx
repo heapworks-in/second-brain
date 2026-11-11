@@ -2,12 +2,14 @@
 
 import { SectionHeading } from "../ui";
 import { CalendarFeed } from "../planner/calendar-feed";
+import { IdentitySection } from "./identity-section";
 import { ModelsSection, type ModelsPayload } from "./models-section";
 import { FocusSection, MeetingsSection, PlannerSection, type MeetingSettings, type PlannerSettings } from "./simple-sections";
 import type { FocusSettingsDTO } from "@/lib/dto";
 
 export interface SettingsPayload {
   models: ModelsPayload;
+  identityNames: string[];
   meetings: MeetingSettings;
   planner: PlannerSettings;
   focus: FocusSettingsDTO;
@@ -34,6 +36,7 @@ export function SettingsPage({ initial }: { initial: SettingsPayload }) {
         <CalendarFeed />
       </section>
 
+      <IdentitySection initial={initial.identityNames} />
       <MeetingsSection initial={initial.meetings} />
       <PlannerSection initial={initial.planner} />
       <FocusSection initial={initial.focus} />

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { SettingsPage, type SettingsPayload } from "./settings-page";
 
 afterEach(() => {
@@ -30,6 +30,7 @@ const MODELS: SettingsPayload["models"] = {
 function payload(over: Partial<SettingsPayload> = {}): SettingsPayload {
   return {
     models: MODELS,
+    identityNames: [],
     meetings: { autoRecord: false, autoRecordNeedsCallLink: true, audioRetentionDays: null },
     planner: { workHours: "09:00-17:30", workingDays: [1, 2, 3, 4, 5] },
     focus: { defaultMinutes: 25, shortBreak: 5, longBreak: 15, longBreakEvery: 4, mode: "pomodoro" },
@@ -214,5 +215,21 @@ describe("SettingsPage", () => {
       expect(calls.find((c) => c.url === "/api/settings/focus")!.body).toEqual({ mode: "timebox" });
       expect(screen.getByText(/Also switchable in the focus pane/)).toBeTruthy();
     });
+  });
+
+  it("holds the spellings of my own name, the one thing the app needs to know about me", async () => {
+    const calls = stubPatches({ names: ["Avinash", "Avinash V"] });
+    render(<SettingsPage initial={payload({ identityNames: ["Avinash"] })} />);
+    const you = screen.getByLabelText("You");
+
+    expect(within(you).getByText("Avinash")).toBeTruthy();
+    fireEvent.change(within(you).getByLabelText("Add a spelling of your name"), { target: { value: "Avinash V" } });
+    fireEvent.click(within(you).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(calls.at(-1)).toMatchObject({ url: "/api/settings/identity", body: { names: ["Avinash", "Avinash V"] } }));
+
+    // The list on screen is the server's answer, so removing works from what was actually saved.
+    await waitFor(() => expect(within(you).getByText("Avinash V")).toBeTruthy());
+    fireEvent.click(within(you).getByRole("button", { name: "Remove Avinash" }));
+    await waitFor(() => expect(calls.at(-1)).toMatchObject({ url: "/api/settings/identity", body: { names: ["Avinash V"] } }));
   });
 });

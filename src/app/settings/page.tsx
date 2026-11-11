@@ -7,6 +7,7 @@ import { getAutoRecordSettings } from "@/domain/meetings/auto-start";
 import { audioRetentionDays } from "@/domain/meetings/audio-retention";
 import { ROLE_LABELS, hasBackup } from "@/domain/models/config";
 import { roleStates } from "@/domain/models/resolve";
+import { identityNames } from "@/domain/trackers/identity";
 import { getWorkHours, getWorkingDays } from "@/lib/work-hours";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ export default async function Settings() {
               canRevert: hasBackup(),
               roles: states.map((s) => ({ ...s, ...ROLE_LABELS[s.role] })),
             },
+            identityNames: identityNames(db),
             meetings: { ...getAutoRecordSettings(db), audioRetentionDays: audioRetentionDays(db) },
             planner: { workHours: getWorkHours(db), workingDays: getWorkingDays(db) },
             focus: getFocusSettings(db),

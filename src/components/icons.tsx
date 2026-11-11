@@ -17,6 +17,7 @@ import {
   Plus,
   CircleHelp,
   Settings,
+  Table,
   type LucideIcon,
 } from "lucide-react";
 import type { IconName } from "./nav";
@@ -40,6 +41,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   search: Search,
   capture: Plus,
   help: CircleHelp,
+  tracker: Table,
 };
 
 export function Icon({ name, className = "w-5 h-5" }: { name: IconName; className?: string }) {

@@ -1,4 +1,4 @@
-import type { ItemStatus, ItemType, ContainerKind, ContainerStatus, ResourceCategory, GoalHorizon, GoalStatus, FocusMode, FocusOutcome, ReviewStep, MeetingDecision, PredictionKind, PredictionUnit, ProposalKind } from "@/db/enums";
+import type { ItemStatus, ItemType, ContainerKind, ContainerStatus, ResourceCategory, GoalHorizon, GoalStatus, FocusMode, FocusOutcome, ReviewStep, MeetingDecision, PredictionKind, PredictionUnit, ProposalKind, TaskStatus } from "@/db/enums";
 import type { CheckResult } from "@/db/safety";
 import type { Distillation } from "@/domain/distill";
 
@@ -342,6 +342,36 @@ export interface PlannerDayDTO {
   calendar: PlannerCalendarDTO;
   sources: PlannerSourcesDTO;
   capacity: CapacityDTO;
+}
+
+/** An imported spreadsheet as the trackers list shows it. */
+export interface TrackerDTO {
+  id: number;
+  name: string;
+  slug: string;
+  containerId: number | null;
+  sourceName: string;
+  sheetName: string;
+  importedAt: string;
+  updatedAt: string;
+  counts: { rows: number; open: number; done: number; mine: number };
+}
+
+/** One row of a tracker, in the sheet's own shape rather than a task's. */
+export interface TrackerRowDTO {
+  id: number;
+  theme: string;
+  parentLabel: string;
+  title: string;
+  owner: PersonRefDTO | null;
+  dueDate: string | null;
+  /** The ETA the file had when it was never a date -- "mid Nov", "W47". */
+  etaText: string;
+  status: TaskStatus;
+  statusLabel: string;
+  notes: string;
+  /** Null owner: mine to do, and the only rows this page can offer an action on. */
+  mine: boolean;
 }
 
 export interface PlannerWeekDayDTO {

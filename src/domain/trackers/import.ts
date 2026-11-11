@@ -127,6 +127,15 @@ export function previewImport(db: DB, input: ImportInput): ImportPlan {
     const status = input.statusMap[statusLabel] ?? "open";
     const sheetExtra: Record<string, string> = {};
     for (const h of keptColumns) if (cell(raw, h)) sheetExtra[h] = cell(raw, h);
+    // An ETA that is prose rather than a date keeps its own words, under its own header. The
+    // alternative is an export that quietly replaces "mid Nov" with an empty cell -- the file
+    // would come back poorer than it went out, which is the one thing a round trip must not do.
+    if (etaText && dueDate === null && columns.eta) sheetExtra[columns.eta] = etaText;
+    // Same reason, for my own rows: a team belongs to the person who owns the row, and I am not
+    // a person here -- my own work is an empty owner. Without this the file comes back with the
+    // Team cell blanked on every row that is mine.
+    const teamText = cell(raw, columns.team);
+    if (teamText && columns.team && (mine.has(ownerName.toLowerCase()) || !ownerName)) sheetExtra[columns.team] = teamText;
 
     if (ownerName) ownerRows.set(ownerName, (ownerRows.get(ownerName) ?? 0) + 1);
     if (statusLabel && !(statusLabel in input.statusMap) && !unknownStatuses.includes(statusLabel)) unknownStatuses.push(statusLabel);
