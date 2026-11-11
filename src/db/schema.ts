@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, integer, text, real, primaryKey, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, text, real, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import {
   ITEM_TYPES,
   ITEM_STATUSES,
@@ -323,6 +323,34 @@ export const attachments = sqliteTable(
 );
 export type Attachment = typeof attachments.$inferSelect;
 
+/**
+ * One imported spreadsheet, and everything the app has to remember in order to give the file
+ * back: which columns were which, which status words mean what, and what the header row said.
+ *
+ * The rows themselves are ordinary tasks -- a tracker is a label on them, not a second place
+ * work can live. That is the whole reason `ownerPersonId` exists: a tracker's rows mostly belong
+ * to other people, and the alternative to one table with an owner was two tables that disagree.
+ */
+export const trackers = sqliteTable("trackers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  containerId: integer("container_id").references(() => containers.id, { onDelete: "set null" }),
+  /** The file it came from and the sheet inside it, for saying where a row came from. */
+  sourceName: text("source_name").notNull().default(""),
+  sheetName: text("sheet_name").notNull().default(""),
+  /** The header row verbatim, in the file's own order: what an export has to write back. */
+  headers: text("headers").notNull().default("[]"),
+  /** Which header answers which field, as confirmed in the import preview, plus how Theme was
+   * read. Never guessed silently: the preview is where this is agreed. */
+  mapping: text("mapping").notNull().default("{}"),
+  /** The sheet's own status words, mapped to the three the app reasons with. */
+  statusMap: text("status_map").notNull().default("{}"),
+  importedAt: text("imported_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+export type Tracker = typeof trackers.$inferSelect;
+
 export const tasks = sqliteTable(
   "tasks",
   {
@@ -350,6 +378,29 @@ export const tasks = sqliteTable(
      * the ask. Its own column for the same reason `droppedAt` is one -- `createdAt` moves with
      * the capture, and most of these tasks will never have a due date to fall back on. */
     askedOn: text("asked_on"),
+    /**
+     * Whose work this is, where that is not mine. Null means mine, which is what makes every
+     * surface in the app able to mean "my work" with one predicate rather than a convention
+     * every future query has to remember.
+     */
+    ownerPersonId: integer("owner_person_id").references(() => people.id, { onDelete: "set null" }),
+    /** The imported sheet this row came from, when it came from one. */
+    trackerId: integer("tracker_id").references(() => trackers.id, { onDelete: "set null" }),
+    /** The sheet's grouping column, kept as the text it was: a theme is what the sheet says it
+     * is, and matching it by string round-trips exactly. */
+    theme: text("theme").notNull().default(""),
+    /** The sheet's task/sub-task split, one level deep. Only leaves are estimated and planned;
+     * a parent carries the roll-up, so capacity cannot count the same work twice. */
+    parentTaskId: integer("parent_task_id").references((): AnySQLiteColumn => tasks.id, { onDelete: "cascade" }),
+    /** The status word humans read -- "In Progress", "Blocked", "On Hold" -- beside the
+     * lifecycle the app reasons with. Written together with `status` so the two cannot drift. */
+    statusLabel: text("status_label").notNull().default(""),
+    /** Every column of the sheet the mapping did not claim, verbatim, so an export rebuilds the
+     * file whole rather than the five columns we understood. */
+    sheetExtra: text("sheet_extra").notNull().default("{}"),
+    /** Which row of the sheet this was, so an export gives the file back in its own order.
+     * Null for a row created here, which exports after the ones that came from the file. */
+    sheetRow: integer("sheet_row"),
     /** The instant a drop happened — its own column because `updatedAt` moves on any later
      * edit, and a review of a past week must not have a task migrate into it because someone
      * touched the title months after. */
@@ -358,7 +409,13 @@ export const tasks = sqliteTable(
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
-  (t) => [index("tasks_container_status_order_idx").on(t.containerId, t.status, t.sortOrder), index("tasks_status_due_idx").on(t.status, t.dueDate)],
+  (t) => [
+    index("tasks_container_status_order_idx").on(t.containerId, t.status, t.sortOrder),
+    index("tasks_status_due_idx").on(t.status, t.dueDate),
+    // The tracker page reads one sheet in its own order, and it is the one read here that can
+    // be hundreds of rows rather than tens.
+    index("tasks_tracker_row_idx").on(t.trackerId, t.sheetRow),
+  ],
 );
 export type Task = typeof tasks.$inferSelect;
 

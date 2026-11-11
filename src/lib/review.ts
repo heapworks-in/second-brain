@@ -9,7 +9,7 @@ import { countInbox } from "@/domain/items";
 import { type PlanTask } from "@/domain/plan";
 import { getReview, nextStep, reviewAnswers, reviewSavedAt, reviewSnapshot, type ReviewSnapshot } from "@/domain/review";
 import { listPredictions } from "@/domain/predictions";
-import { containerProgress, listTasks } from "@/domain/tasks";
+import { containerProgress, listTasks, MINE } from "@/domain/tasks";
 import { localDay } from "./time";
 import { nextWeek, weekDays, weekEnd, weekLabel, weekStart } from "./week";
 import { serializeGoal, serializeMeetings, serializePlanTasks, serializeTasks } from "./api";
@@ -63,7 +63,7 @@ function doneInWeek(db: DB, week: string, end: string): Task[] {
   return db
     .select()
     .from(tasks)
-    .where(and(eq(tasks.status, "done"), isNotNull(tasks.completedAt), gte(tasks.completedAt, dayBounds(week).start), lt(tasks.completedAt, dayBounds(end).start)))
+    .where(and(MINE, eq(tasks.status, "done"), isNotNull(tasks.completedAt), gte(tasks.completedAt, dayBounds(week).start), lt(tasks.completedAt, dayBounds(end).start)))
     .all();
 }
 
@@ -74,7 +74,7 @@ function droppedInWeek(db: DB, week: string, end: string): Task[] {
   return db
     .select()
     .from(tasks)
-    .where(and(eq(tasks.status, "dropped"), isNotNull(tasks.droppedAt), gte(tasks.droppedAt, dayBounds(week).start), lt(tasks.droppedAt, dayBounds(end).start)))
+    .where(and(MINE, eq(tasks.status, "dropped"), isNotNull(tasks.droppedAt), gte(tasks.droppedAt, dayBounds(week).start), lt(tasks.droppedAt, dayBounds(end).start)))
     .all();
 }
 

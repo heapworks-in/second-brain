@@ -40,6 +40,7 @@ export const TaskBody = z.object({
   sourceItemId: z.number().int().positive().nullable().optional(),
   estimateMinutes: z.number().int().min(5).max(480).nullable().optional(),
   sessionMinutes: z.number().int().min(15).max(480).nullable().optional(),
+  ownerPersonId: z.number().int().positive().nullable().optional(),
   requesterPersonId: z.number().int().positive().nullable().optional(),
   /** A `@handle` from the add-task box. Resolved against `people.slug`, and ignored when it
    * matches nobody -- the handle is still in the title, so nothing is lost. */

@@ -1,6 +1,7 @@
 import { and, eq, gt, isNotNull } from "drizzle-orm";
 import { tasks } from "@/db/schema";
 import { focusMinutesByTask, similarActualMinutes } from "@/domain/focus";
+import { MINE } from "@/domain/tasks";
 import { formatMinutes } from "@/lib/capacity";
 import { threshold } from "../thresholds";
 import type { Generator } from "../types";
@@ -28,7 +29,7 @@ export const taskOverrun: Generator = (db) => {
   const open = db
     .select({ id: tasks.id, title: tasks.title, estimateMinutes: tasks.estimateMinutes, containerId: tasks.containerId })
     .from(tasks)
-    .where(and(eq(tasks.status, "open"), isNotNull(tasks.estimateMinutes), gt(tasks.estimateMinutes, 0)))
+    .where(and(MINE, eq(tasks.status, "open"), isNotNull(tasks.estimateMinutes), gt(tasks.estimateMinutes, 0)))
     .all();
   if (open.length === 0) return [];
 

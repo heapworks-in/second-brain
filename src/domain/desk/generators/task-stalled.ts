@@ -1,6 +1,7 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { dailyPlanEntries, tasks } from "@/db/schema";
 import { focusMinutesByTask } from "@/domain/focus";
+import { MINE } from "@/domain/tasks";
 import { threshold } from "../thresholds";
 import type { Generator } from "../types";
 
@@ -29,7 +30,7 @@ export const taskStalled: Generator = (db) => {
     })
     .from(tasks)
     .innerJoin(dailyPlanEntries, eq(dailyPlanEntries.taskId, tasks.id))
-    .where(eq(tasks.status, "open"))
+    .where(and(MINE, eq(tasks.status, "open")))
     .groupBy(tasks.id)
     .having(sql`count(distinct ${dailyPlanEntries.date}) >= ${minDays}`)
     .all();

@@ -3,7 +3,7 @@ import type { DB } from "@/db/client";
 import { dailyPlanEntries, taskBlocks, tasks, type Task, type TaskBlock } from "@/db/schema";
 import { addDays, listMeetings } from "@/domain/activity";
 import { effectiveDecision, seriesDecisionsFor } from "@/domain/meetings/decision";
-import { getTask, updateTask } from "@/domain/tasks";
+import { getTask, requireMine, updateTask } from "@/domain/tasks";
 import { meetingCost } from "@/lib/capacity";
 import { freeSlots, placeSessions, SESSION_GAP, sessionsFor, type Span } from "@/lib/scheduler";
 import { getWorkHours } from "@/lib/work-hours";
@@ -37,10 +37,14 @@ function checkDate(date: string): void {
   if (!DATE_RE.test(date)) throw new BlockError("A date is YYYY-MM-DD", 400);
 }
 
+/**
+ * Both `addBlock` and `appendBlock` come through here, which is why the ownership rule lives
+ * here rather than in each of them: hours on the timeline are hours of my day, and giving them
+ * to work somebody else owns is the same lie as planning it.
+ */
 function requireTask(db: DB, id: number): Task {
-  const row = getTask(db, id);
-  if (!row) throw new BlockError(`Task ${id} not found`, 404);
-  return row;
+  if (!getTask(db, id)) throw new BlockError(`Task ${id} not found`, 404);
+  return requireMine(db, id);
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");

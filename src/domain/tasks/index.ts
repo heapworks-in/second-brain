@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNotNull, isNull, like, lte, sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
-import { containers, items, people, tasks, type Task } from "@/db/schema";
+import { containers, dailyPlanEntries, items, people, tasks, type Task } from "@/db/schema";
 import { clearBlocks } from "@/domain/blocks";
 import type { TaskPriority, TaskStatus } from "@/db/enums";
 import { localDay, nowIso } from "@/lib/time";
@@ -14,6 +14,22 @@ export class TaskError extends Error {
     this.name = "TaskError";
   }
 }
+
+/**
+ * My own work: `owner_person_id is null`.
+ *
+ * This exists as one exported expression rather than a convention because of what it guards. A
+ * tracker is two hundred rows of which six are mine, and every surface in this app that means
+ * "my work" -- the planner, Home's counts, the weekly review, three desk generators, the drift
+ * figure -- read `tasks` directly. One of them forgetting the predicate does not fail loudly;
+ * it quietly fills my week with other people's work. So the predicate is a thing you import,
+ * and `src/domain/tasks/mine.test.ts` asserts each of those surfaces still uses it.
+ *
+ * Deliberately not "owned by a person whose name is mine": identity is a list of spellings in a
+ * setting (`identity.names`), used once at import to decide which rows are mine. After that the
+ * answer is a null, which cannot be mistyped.
+ */
+export const MINE = isNull(tasks.ownerPersonId);
 
 export interface Progress {
   open: number;
@@ -35,6 +51,8 @@ export interface RequesterInput {
 
 export interface CreateTaskInput extends RequesterInput {
   title: string;
+  /** Whose work it is; null (the default) means mine. */
+  ownerPersonId?: number | null;
   containerId?: number | null;
   dueDate?: string | null;
   priority?: TaskPriority;
@@ -46,6 +64,7 @@ export interface CreateTaskInput extends RequesterInput {
 
 export interface UpdateTaskInput extends RequesterInput {
   title?: string;
+  ownerPersonId?: number | null;
   notes?: string;
   priority?: TaskPriority;
   dueDate?: string | null;
@@ -133,6 +152,22 @@ function requireTask(db: DB, id: number): Task {
   return row;
 }
 
+/**
+ * Refuses a task that is somebody else's before it can be planned, blocked or run.
+ *
+ * The honest answer to "I want to work on Priya's row" is to take it over, not to put her name
+ * on my timeline -- and a plan entry for work I am not doing makes the capacity line lie, which
+ * is the one thing the planner must never do.
+ */
+export function requireMine(db: DB, taskId: number): Task {
+  const task = requireTask(db, taskId);
+  if (task.ownerPersonId !== null) {
+    const owner = db.select({ name: people.name }).from(people).where(eq(people.id, task.ownerPersonId)).get();
+    throw new TaskError(`That task is ${owner ? `${owner.name}'s` : "somebody else's"} -- take it over first to plan it`, 409);
+  }
+  return task;
+}
+
 export function createTask(db: DB, input: CreateTaskInput): Task {
   const title = cleanTitle(input.title);
   checkDate(input.dueDate);
@@ -144,6 +179,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   if (sourceItemId !== null) requireItem(db, sourceItemId);
   const now = nowIso();
   const requesterPersonId = resolveRequester(db, input) ?? null;
+  const ownerPersonId = input.ownerPersonId ?? null;
+  if (ownerPersonId !== null) requirePerson(db, ownerPersonId);
   checkDate(input.askedOn);
   const row = db
     .insert(tasks)
@@ -152,6 +189,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       notes: input.notes ?? "",
       priority: input.priority ?? "normal",
       dueDate: input.dueDate ?? null,
+      ownerPersonId,
       requesterPersonId,
       // A wait with no start cannot be measured, so the ask dates itself unless the caller knows
       // better. Null without a requester: a date with nobody attached says nothing.
@@ -179,9 +217,23 @@ const STATUS_RANK = sql`case ${tasks.status} when 'open' then 0 when 'done' then
 export function listTasks(
   db: DB,
   /** `dueOnOrBefore` also drops the undated: a SQL comparison against null is never true. */
-  filter: { containerId?: number | null; status?: TaskStatus | "all"; dueOnOrBefore?: string; sourceItemId?: number; requester?: number | "any" } = {},
+  filter: {
+    containerId?: number | null;
+    status?: TaskStatus | "all";
+    dueOnOrBefore?: string;
+    sourceItemId?: number;
+    requester?: number | "any";
+    trackerId?: number;
+    /** Whose work to list. Defaults to mine, so a caller that says nothing can never be the one
+     * that floods a screen with a team's rows; `"anyone"` is how the tracker page asks for them. */
+    owner?: "me" | "anyone" | number;
+  } = {},
 ): Task[] {
   const conds = [];
+  const owner = filter.owner ?? "me";
+  if (owner === "me") conds.push(MINE);
+  else if (typeof owner === "number") conds.push(eq(tasks.ownerPersonId, owner));
+  if (filter.trackerId !== undefined) conds.push(eq(tasks.trackerId, filter.trackerId));
   if (filter.containerId !== undefined) conds.push(containerWhere(filter.containerId));
   const status = filter.status ?? "open";
   if (status !== "all") conds.push(eq(tasks.status, status));
@@ -218,6 +270,16 @@ export function updateTask(db: DB, id: number, patch: UpdateTaskInput): Task {
   if (patch.sessionMinutes !== undefined) {
     checkSessionMinutes(patch.sessionMinutes);
     set.sessionMinutes = patch.sessionMinutes;
+  }
+  if (patch.ownerPersonId !== undefined && patch.ownerPersonId !== current.ownerPersonId) {
+    if (patch.ownerPersonId !== null) requirePerson(db, patch.ownerPersonId);
+    set.ownerPersonId = patch.ownerPersonId;
+    // Handing work to somebody else takes my day back with it: a plan entry and the hours it
+    // blocked are a claim about what I am doing, and that claim has just stopped being true.
+    if (patch.ownerPersonId !== null) {
+      db.delete(dailyPlanEntries).where(eq(dailyPlanEntries.taskId, id)).run();
+      clearBlocks(db, id);
+    }
   }
   const requesterPersonId = resolveRequester(db, patch);
   if (requesterPersonId !== undefined) {
@@ -312,10 +374,13 @@ export function containerProgress(db: DB, ids: number[]): Map<number, Progress> 
     if (row.status === "open") p.open = Number(row.c);
     else p.done = Number(row.c);
   }
+  // Counted above across everybody: a project's percent done is the project's, and a tracker
+  // whose rows are mostly other people's would otherwise read 100% while half of it is open.
+  // What comes *next*, though, is advice to me, so it can only be my own work.
   const openTasks = db
     .select({ id: tasks.id, title: tasks.title, dueDate: tasks.dueDate, containerId: tasks.containerId, sortOrder: tasks.sortOrder })
     .from(tasks)
-    .where(and(inArray(tasks.containerId, ids), eq(tasks.status, "open")))
+    .where(and(inArray(tasks.containerId, ids), eq(tasks.status, "open"), MINE))
     .orderBy(asc(tasks.sortOrder), sql`${tasks.dueDate} is null`, asc(tasks.dueDate), asc(tasks.id))
     .all();
   for (const t of openTasks) {

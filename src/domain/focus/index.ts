@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, ne, sql } from
 import type { DB } from "@/db/client";
 import { focusRuns, tasks, type FocusRun, type TaskBlock } from "@/db/schema";
 import { FOCUS_MODES, type FocusMode, type FocusOutcome } from "@/db/enums";
-import { getTask } from "@/domain/tasks";
+import { getTask, MINE, requireMine } from "@/domain/tasks";
 import { getBlock } from "@/domain/blocks";
 import { getSetting, setSetting } from "@/domain/settings";
 import { addDays, dayBounds, localDay } from "@/domain/activity";
@@ -179,6 +179,8 @@ export function startFocus(db: DB, input: { taskId?: number | null; blockId?: nu
   // the work to already be written down. A task that was *named* still has to exist.
   const taskId = input.taskId ?? null;
   if (taskId !== null && !getTask(db, taskId)) throw new FocusError("Task not found", 404);
+  // Minutes run against a task are a claim about who did the work, so they can only be mine.
+  if (taskId !== null) requireMine(db, taskId);
   let block: TaskBlock | undefined;
   if (input.blockId != null) {
     // A block names the session this run's length is meant to come from (design §4.2): one that
@@ -291,6 +293,7 @@ export function estimateActualPairs(db: DB, limit = DRIFT_WINDOW): Pair[] {
     .innerJoin(focusRuns, eq(focusRuns.taskId, tasks.id))
     .where(
       and(
+        MINE,
         eq(tasks.status, "done"),
         isNotNull(tasks.estimateMinutes),
         gt(tasks.estimateMinutes, 0),
@@ -355,6 +358,7 @@ export function likeThisMinutesByTask(
     .innerJoin(focusRuns, eq(focusRuns.taskId, tasks.id))
     .where(
       and(
+        MINE,
         inArray(tasks.containerId, containerIds),
         eq(tasks.status, "done"),
         isNotNull(focusRuns.actualMinutes),

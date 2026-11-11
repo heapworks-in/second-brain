@@ -3,7 +3,7 @@ import type { DB } from "@/db/client";
 import { dailyPlanEntries, tasks, type Task } from "@/db/schema";
 import { blocksByTask, clearBlocks } from "@/domain/blocks";
 import { addDays } from "@/domain/activity";
-import { getTask, TaskError } from "@/domain/tasks";
+import { requireMine } from "@/domain/tasks";
 import { nowIso } from "@/lib/time";
 
 /** A task as it sits on one day's plan: the task's own row, with the plan entry's id and the
@@ -41,7 +41,9 @@ export function listPlan(db: DB, date: string): PlanTask[] {
 /** Appends the task at the end of that day's plan. Planning it twice is not an error and does
  * not move it: the unique index on date+task is the plan's identity, not a clash to report. */
 export function addToPlan(db: DB, date: string, taskId: number): void {
-  if (!getTask(db, taskId)) throw new TaskError(`Task ${taskId} not found`, 404);
+  // `requireMine`, not `getTask`: a plan entry for work somebody else owns makes the capacity
+  // line lie about a day I was never going to spend on it.
+  requireMine(db, taskId);
   if (entryId(db, date, taskId) !== undefined) return;
   db.insert(dailyPlanEntries).values({ date, taskId, sortOrder: nextSortOrder(db, date), createdAt: nowIso() }).run();
 }

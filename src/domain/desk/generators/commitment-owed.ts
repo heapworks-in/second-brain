@@ -1,6 +1,7 @@
 import { and, eq, isNotNull, isNull, lte } from "drizzle-orm";
 import { people, taskBlocks, tasks } from "@/db/schema";
 import { addDays, localDay } from "@/domain/activity";
+import { MINE } from "@/domain/tasks";
 import { daysBetween } from "@/lib/deadline";
 import { threshold } from "../thresholds";
 import type { Generator } from "../types";
@@ -32,6 +33,7 @@ export const commitmentOwed: Generator = (db, now) => {
     .leftJoin(taskBlocks, eq(taskBlocks.taskId, tasks.id))
     .where(
       and(
+        MINE,
         eq(tasks.status, "open"),
         isNotNull(tasks.askedOn),
         // Asked long enough ago to be a wait rather than a conversation that just happened.
