@@ -17,7 +17,7 @@ CREATE UNIQUE INDEX `trackers_slug_unique` ON `trackers` (`slug`);--> statement-
 ALTER TABLE `tasks` ADD `owner_person_id` integer REFERENCES people(id) ON DELETE SET NULL;--> statement-breakpoint
 ALTER TABLE `tasks` ADD `tracker_id` integer REFERENCES trackers(id) ON DELETE SET NULL;--> statement-breakpoint
 ALTER TABLE `tasks` ADD `theme` text DEFAULT '' NOT NULL;--> statement-breakpoint
-ALTER TABLE `tasks` ADD `parent_task_id` integer REFERENCES tasks(id) ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE `tasks` ADD `parent_label` text DEFAULT '' NOT NULL;--> statement-breakpoint
 ALTER TABLE `tasks` ADD `status_label` text DEFAULT '' NOT NULL;--> statement-breakpoint
 ALTER TABLE `tasks` ADD `sheet_extra` text DEFAULT '{}' NOT NULL;--> statement-breakpoint
 ALTER TABLE `tasks` ADD `sheet_row` integer;--> statement-breakpoint

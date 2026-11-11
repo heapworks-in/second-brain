@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, integer, text, real, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, text, real, primaryKey, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import {
   ITEM_TYPES,
   ITEM_STATUSES,
@@ -389,9 +389,15 @@ export const tasks = sqliteTable(
     /** The sheet's grouping column, kept as the text it was: a theme is what the sheet says it
      * is, and matching it by string round-trips exactly. */
     theme: text("theme").notNull().default(""),
-    /** The sheet's task/sub-task split, one level deep. Only leaves are estimated and planned;
-     * a parent carries the roll-up, so capacity cannot count the same work twice. */
-    parentTaskId: integer("parent_task_id").references((): AnySQLiteColumn => tasks.id, { onDelete: "cascade" }),
+    /**
+     * The sheet's "Task" cell when this row is a sub-task of it, empty when the row is the task.
+     *
+     * A label rather than a parent id, because in a real tracker the parent is a repeated (or
+     * merged) cell with no row of its own -- and synthesising a task row for it would invent work
+     * that belongs to nobody while still landing in my lists. A label also round-trips to the
+     * file exactly, which an id cannot.
+     */
+    parentLabel: text("parent_label").notNull().default(""),
     /** The status word humans read -- "In Progress", "Blocked", "On Hold" -- beside the
      * lifecycle the app reasons with. Written together with `status` so the two cannot drift. */
     statusLabel: text("status_label").notNull().default(""),

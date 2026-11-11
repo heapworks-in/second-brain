@@ -3,6 +3,7 @@ import type { DB } from "@/db/client";
 import { containers, dailyPlanEntries, items, people, tasks, type Task } from "@/db/schema";
 import { clearBlocks } from "@/domain/blocks";
 import type { TaskPriority, TaskStatus } from "@/db/enums";
+import { guessStatus } from "@/domain/trackers/mapping";
 import { localDay, nowIso } from "@/lib/time";
 
 export class TaskError extends Error {
@@ -49,10 +50,27 @@ export interface RequesterInput {
   askedOn?: string | null;
 }
 
-export interface CreateTaskInput extends RequesterInput {
+/** The parts of a task that come from an imported sheet and go back out to one. Set by the
+ * importer and the tracker page; absent everywhere else, where a task is not a row in a file. */
+export interface SheetInput {
+  trackerId?: number | null;
+  theme?: string;
+  parentLabel?: string;
+  /** The status word humans read. Kept in step with `status` by `setStatus`, never independently. */
+  statusLabel?: string;
+  /** Columns of the sheet the mapping did not claim, verbatim. */
+  sheetExtra?: Record<string, string>;
+  sheetRow?: number | null;
+}
+
+export interface CreateTaskInput extends RequesterInput, SheetInput {
   title: string;
   /** Whose work it is; null (the default) means mine. */
   ownerPersonId?: number | null;
+  /** Only the importer passes this: a sheet arrives with rows already finished. A row imported
+   * as done gets no `completedAt`, because nobody knows when it was done and guessing would put
+   * it in this week's review. */
+  status?: TaskStatus;
   containerId?: number | null;
   dueDate?: string | null;
   priority?: TaskPriority;
@@ -62,8 +80,11 @@ export interface CreateTaskInput extends RequesterInput {
   sessionMinutes?: number | null;
 }
 
-export interface UpdateTaskInput extends RequesterInput {
+export interface UpdateTaskInput extends RequesterInput, SheetInput {
   title?: string;
+  /** Only the importer passes this; every other caller moves the lifecycle through
+   * `completeTask`/`reopenTask`/`dropTask`. */
+  status?: TaskStatus;
   ownerPersonId?: number | null;
   notes?: string;
   priority?: TaskPriority;
@@ -190,6 +211,13 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       priority: input.priority ?? "normal",
       dueDate: input.dueDate ?? null,
       ownerPersonId,
+      status: input.status ?? "open",
+      trackerId: input.trackerId ?? null,
+      theme: input.theme ?? "",
+      parentLabel: input.parentLabel ?? "",
+      statusLabel: input.statusLabel ?? "",
+      sheetExtra: JSON.stringify(input.sheetExtra ?? {}),
+      sheetRow: input.sheetRow ?? null,
       requesterPersonId,
       // A wait with no start cannot be measured, so the ask dates itself unless the caller knows
       // better. Null without a requester: a date with nobody attached says nothing.
@@ -281,6 +309,12 @@ export function updateTask(db: DB, id: number, patch: UpdateTaskInput): Task {
       clearBlocks(db, id);
     }
   }
+  if (patch.trackerId !== undefined) set.trackerId = patch.trackerId;
+  if (patch.theme !== undefined) set.theme = patch.theme;
+  if (patch.parentLabel !== undefined) set.parentLabel = patch.parentLabel;
+  if (patch.statusLabel !== undefined) set.statusLabel = patch.statusLabel;
+  if (patch.sheetExtra !== undefined) set.sheetExtra = JSON.stringify(patch.sheetExtra);
+  if (patch.sheetRow !== undefined) set.sheetRow = patch.sheetRow;
   const requesterPersonId = resolveRequester(db, patch);
   if (requesterPersonId !== undefined) {
     set.requesterPersonId = requesterPersonId;
@@ -296,6 +330,9 @@ export function updateTask(db: DB, id: number, patch: UpdateTaskInput): Task {
   }
   const row = db.update(tasks).set(set).where(eq(tasks.id, id)).returning().get();
   if (!row) throw new TaskError(`Task ${id} not found`, 404);
+  // A re-import can finish a row somebody ticked in the file. The lifecycle still moves through
+  // `setStatus`, so dropping one still gives its hours back and `droppedAt` is still stamped.
+  if (patch.status !== undefined && patch.status !== current.status) return setStatus(db, id, patch.status);
   return row;
 }
 
@@ -307,13 +344,28 @@ export function updateTask(db: DB, id: number, patch: UpdateTaskInput): Task {
  * The import runs the other way round from the usual one — the blocks domain reads tasks —
  * but only inside this call, never while either module is being evaluated.
  */
+/**
+ * The word a sheet should now read, given where the lifecycle has moved.
+ *
+ * Only the ends are rewritten. "Blocked" and "On Hold" are both open and both worth keeping, so
+ * reopening a row leaves its word alone unless that word claims the work is finished -- which,
+ * after a reopen, it is not. A task that never came from a sheet has no word and gets none.
+ */
+function labelFor(current: Task, status: TaskStatus): string | undefined {
+  if (current.trackerId === null && !current.statusLabel) return undefined;
+  if (status === "done") return "Done";
+  if (status === "dropped") return "Dropped";
+  return guessStatus(current.statusLabel) === null ? undefined : "In Progress";
+}
+
 function setStatus(db: DB, id: number, status: TaskStatus): Task {
-  requireTask(db, id);
+  const current = requireTask(db, id);
   const now = nowIso();
+  const statusLabel = labelFor(current, status);
   return db.transaction(() => {
     const row = db
       .update(tasks)
-      .set({ status, completedAt: status === "done" ? now : null, droppedAt: status === "dropped" ? now : null, updatedAt: now })
+      .set({ status, completedAt: status === "done" ? now : null, droppedAt: status === "dropped" ? now : null, ...(statusLabel === undefined ? {} : { statusLabel }), updatedAt: now })
       .where(eq(tasks.id, id))
       .returning()
       .get();
