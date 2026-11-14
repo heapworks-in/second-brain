@@ -1,10 +1,12 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { makeTestDb, type TestDb } from "@/test/db";
-import { containers, dailyPlanEntries, items, meetingSeriesDecisions, predictions, proposals, tasks } from "@/db/schema";
+import { containers, dailyPlanEntries, items, meetingSeriesDecisions, observations, predictions, proposals, tasks } from "@/db/schema";
 import { getItem, listItems } from "@/domain/items";
 import { getTask, listTasks } from "@/domain/tasks";
 import { listPlan } from "@/domain/plan";
+import { ingestObservations } from "@/domain/observations";
+import { createPerson, listPeople } from "@/domain/people";
 import { acceptMeetingAction } from "@/domain/meetings/actions";
 import { DeskError, decideProposal, resetUndos, undoProposal } from "./decide";
 import type { ProposalDraft } from "./types";
@@ -289,5 +291,101 @@ describe("undoProposal", () => {
     decideProposal(t.db, p.id, "accept", NOW);
     undoProposal(t.db, p.id);
     expect(state(p.id)).toMatchObject({ state: "open", decidedAt: null });
+  });
+});
+
+describe("ask_unanswered", () => {
+  /** An observation plus the open proposal the generator would have made for it. */
+  function anAsk(over: Record<string, unknown> = {}) {
+    ingestObservations(
+      t.db,
+      [
+        {
+          source: "slack",
+          externalId: "T1/C1/1731600000.000100",
+          at: "2026-10-20T09:00:00.000Z",
+          kind: "mention",
+          actorHandle: "priya",
+          actorName: "Priya Raman",
+          text: "can you confirm the Q4 numbers?",
+          url: "https://app.slack.com/client/T1/C1/p1",
+          context: "#project-atlas",
+          ...over,
+        },
+      ],
+      NOW,
+    );
+    const row = t.db.select().from(observations).all()[0];
+    return {
+      row,
+      proposal: open({
+        kind: "ask_unanswered",
+        source: "observation",
+        sourceRef: `observation:${row.id}`,
+        payload: {
+          observationId: row.id,
+          actorHandle: row.actorHandle,
+          actorName: row.actorName,
+          askedAt: row.at,
+          url: row.url,
+          title: "can you confirm the Q4 numbers?",
+        },
+      }),
+    };
+  }
+
+  it("turns an ask into a commitment owed to the person who asked", () => {
+    t = makeTestDb();
+    const { row, proposal } = anAsk();
+    const decided = decideProposal(t.db, proposal.id, "accept", NOW);
+    expect(decided.label).toBe("Now owed to Priya Raman");
+    const task = listTasks(t.db, { status: "open" }).find((x) => x.title === "can you confirm the Q4 numbers?")!;
+    expect(task.requesterPersonId).not.toBeNull();
+    // The wait is dated from the message, not from the moment the card was answered -- three
+    // weeks of somebody waiting must not be reset to nothing by finally noticing.
+    expect(task.askedOn).toBe("2026-10-20");
+    expect(t.db.select().from(observations).where(eq(observations.id, row.id)).get()!.taskId).toBe(task.id);
+  });
+
+  it("reuses a person already known by name rather than inventing a second one", () => {
+    t = makeTestDb();
+    const existing = createPerson(t.db, { name: "Priya Raman" });
+    const { proposal } = anAsk();
+    decideProposal(t.db, proposal.id, "accept", NOW);
+    expect(listPeople(t.db)).toHaveLength(1);
+    const task = listTasks(t.db, { status: "open" })[0];
+    expect(task.requesterPersonId).toBe(existing.id);
+  });
+
+  it("undo removes the task, the link and the person it invented", () => {
+    t = makeTestDb();
+    const { row, proposal } = anAsk();
+    decideProposal(t.db, proposal.id, "accept", NOW);
+    undoProposal(t.db, proposal.id);
+    expect(listTasks(t.db, { status: "open" })).toHaveLength(0);
+    expect(t.db.select().from(observations).where(eq(observations.id, row.id)).get()!.taskId).toBeNull();
+    expect(listPeople(t.db)).toHaveLength(0);
+  });
+
+  it("undo leaves a person who was already known", () => {
+    t = makeTestDb();
+    createPerson(t.db, { name: "Priya Raman" });
+    const { proposal } = anAsk();
+    decideProposal(t.db, proposal.id, "accept", NOW);
+    undoProposal(t.db, proposal.id);
+    expect(listPeople(t.db)).toHaveLength(1);
+  });
+
+  it("refuses an ask that is already a task", () => {
+    t = makeTestDb();
+    const { proposal } = anAsk();
+    decideProposal(t.db, proposal.id, "accept", NOW);
+    const second = open({
+      kind: "ask_unanswered",
+      source: "observation",
+      sourceRef: "observation:999",
+      payload: { observationId: t.db.select().from(observations).all()[0].id, actorName: "Priya Raman", actorHandle: "priya", askedAt: NOW.toISOString(), title: "again" },
+    });
+    expect(() => decideProposal(t.db, second.id, "accept", NOW)).toThrow(/already a task/);
   });
 });

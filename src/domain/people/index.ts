@@ -180,3 +180,33 @@ export function autoLinkMentions(db: DB, itemId: number): number {
   }
   return added;
 }
+
+/**
+ * The person behind an outside ask, made if this is the first time they have appeared.
+ *
+ * Matched on the display name before the handle, and that order is the point: somebody first
+ * met in a meeting is stored as "Priya Raman", while Slack hands over "@priya". Matching on the
+ * slug alone would invent a second Priya on her first message and split her timeline in two.
+ *
+ * Returns whether it created anyone, so an undo can remove a person this press invented without
+ * touching one who was already known.
+ */
+export function findOrCreateActor(db: DB, name: string | null, handle: string | null): { person: Person; created: boolean } {
+  const cleanName = name?.trim() ?? "";
+  if (cleanName) {
+    const byName = db
+      .select()
+      .from(people)
+      .where(sql`lower(${people.name}) = ${cleanName.toLowerCase()}`)
+      .get();
+    if (byName) return { person: byName, created: false };
+  }
+  const cleanHandle = handle?.trim().toLowerCase() ?? "";
+  if (cleanHandle) {
+    const bySlug = getPersonBySlug(db, cleanHandle);
+    if (bySlug) return { person: bySlug, created: false };
+  }
+  const label = cleanName || cleanHandle;
+  if (!label) throw new PersonError("An ask with no name and no handle has nobody waiting on it");
+  return { person: createPerson(db, { name: label }), created: true };
+}

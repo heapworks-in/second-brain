@@ -1,5 +1,6 @@
 import type { DB } from "@/db/client";
 import type { Generator, ProposalDraft } from "../types";
+import { askUnanswered } from "./ask-unanswered";
 import { captureUnfiled } from "./capture-unfiled";
 import { commitmentOwed } from "./commitment-owed";
 import { commitmentUnbooked } from "./commitment-unbooked";
@@ -23,6 +24,7 @@ export const GENERATORS: { name: string; run: Generator }[] = [
   { name: "task_stalled", run: taskStalled },
   { name: "capture_unfiled", run: captureUnfiled },
   { name: "decision_stale", run: decisionStale },
+  { name: "ask_unanswered", run: askUnanswered },
 ];
 
 /**

@@ -39,6 +39,9 @@ const DEFAULT_WEIGHTS: Record<ProposalKind, number> = {
   // The only kind here whose cost is paid by somebody else's week, and the only one that gets
   // worse on its own while nothing happens.
   commitment_owed: 0.85,
+  // Somebody is already waiting and does not know whether they were heard. Just under the owed
+  // commitment it turns into, because that one has at least been written down.
+  ask_unanswered: 0.8,
   prediction_due: 0.8,
   task_overrun: 0.7,
   task_stalled: 0.6,

@@ -2,9 +2,11 @@ import { and, eq, gte } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { dailyPlanEntries, meetingSeriesDecisions, proposals, type Proposal } from "@/db/schema";
 import { createItem, deleteItem, fileItem, getItem } from "@/domain/items";
+import { getObservation, linkObservationToTask } from "@/domain/observations";
+import { deletePerson, findOrCreateActor } from "@/domain/people";
 import { acceptMeetingAction, markActionAccepted } from "@/domain/meetings/actions";
 import { addToPlan, removeFromPlan } from "@/domain/plan";
-import { deleteTask, getTask, updateTask } from "@/domain/tasks";
+import { createTask, deleteTask, getTask, updateTask } from "@/domain/tasks";
 import { formatMinutes } from "@/lib/capacity";
 import { localDay } from "@/lib/time";
 import { threshold } from "./thresholds";
@@ -171,6 +173,36 @@ function commit(db: DB, proposal: Proposal, now: Date): { label: string; href?: 
           // not lose its task because the desk card was undone.
           if (created) deleteTask(db, task.id);
           markActionAccepted(db, p.itemId, p.index, !created);
+        },
+      };
+    }
+    case "ask_unanswered": {
+      const p = payloadOf<{ observationId: number; actorHandle: string | null; actorName: string | null; askedAt: string; title: string; url: string | null }>(proposal);
+      const observation = getObservation(db, p.observationId);
+      if (!observation) throw new DeskError("That message is no longer here", 404);
+      if (observation.taskId !== null) throw new DeskError("That ask is already a task", 409);
+      // The person has to exist for this to be an owed commitment at all: a task with no
+      // requester has nobody waiting on it, and would never reach `commitment_owed`. Matched on
+      // the display name first and the handle second, because a person created from a meeting
+      // is "Priya Raman" while Slack calls her "@priya" -- slug-only matching would make a
+      // second Priya on the first Slack ask.
+      const { person, created } = findOrCreateActor(db, p.actorName, p.actorHandle);
+      const task = createTask(db, {
+        title: p.title,
+        requesterPersonId: person.id,
+        // The message's own date, not today: the wait started when they asked.
+        askedOn: localDay(p.askedAt),
+        notes: p.url ? `Asked on ${observation.source}: ${p.url}` : undefined,
+      });
+      linkObservationToTask(db, observation.id, task.id);
+      return {
+        label: `Now owed to ${person.name}`,
+        href: `/tasks?task=${task.id}`,
+        undo: () => {
+          linkObservationToTask(db, observation.id, null);
+          deleteTask(db, task.id);
+          // Only a person this press invented: one who was already known keeps their page.
+          if (created) deletePerson(db, person.id);
         },
       };
     }

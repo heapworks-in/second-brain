@@ -183,6 +183,13 @@
       "when": 1794361484239,
       "tag": "0025_trackers",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1794666952920,
+      "tag": "0026_observations",
+      "breakpoints": true
     }
   ]
 }

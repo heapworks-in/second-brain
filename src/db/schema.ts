@@ -641,3 +641,50 @@ export const proposals = sqliteTable(
   ],
 );
 export type Proposal = typeof proposals.$inferSelect;
+
+/**
+ * What an adaptor saw in an external tool. One row per message that might be an ask.
+ *
+ * Adaptors live in the sibling `sb-adaptors` repo and are deliberately dumb: they report what
+ * they read and nothing else -- no people resolved, no urgency scored, no task created. All of
+ * that judgement stays here, which is what makes the second adaptor a scraper and a field
+ * mapping rather than a second copy of the product.
+ *
+ * `at` is the message's own timestamp, never the import's. A backfill of a three-week-old
+ * mention has to arrive three weeks old, because `ask_unanswered`'s urgency grows with the
+ * wait; stamping it with import time would quietly reset the whole backlog to zero.
+ */
+export const observations = sqliteTable(
+  "observations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** The adaptor that produced it: "slack", later "teams", "jira". */
+    source: text("source").notNull(),
+    /** Unique within the source. A backfill is a scroll and a scroll overlaps itself, so this
+     * is what makes re-running one an update rather than a pile of duplicates. */
+    externalId: text("external_id").notNull(),
+    at: text("at").notNull(),
+    /** mention | dm | thread_reply -- left as free text, because the next adaptor will have its
+     * own words for the same idea and an enum here would mean a migration per tool. */
+    kind: text("kind").notNull(),
+    actorHandle: text("actor_handle"),
+    actorName: text("actor_name"),
+    /** Raw message text, under the 14-day TTL agreed for captured content: nulled by the sweep
+     * unless a person accepted the card it produced. Never embedded into search. */
+    text: text("text").notNull().default(""),
+    url: text("url"),
+    /** Channel, DM name or thread title -- whatever the adaptor can say about where it was. */
+    context: text("context"),
+    meta: text("meta").notNull().default("{}"),
+    /** Set when the proposal was accepted. Also what "already dealt with" means. */
+    taskId: integer("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("observations_source_external_idx").on(t.source, t.externalId),
+    // The generator's only query: everything not yet turned into a task, oldest first.
+    index("observations_open_idx").on(t.taskId, t.at),
+  ],
+);
+export type Observation = typeof observations.$inferSelect;

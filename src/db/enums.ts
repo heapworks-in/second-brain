@@ -109,6 +109,7 @@ export const PROPOSAL_KINDS = [
   "capture_unfiled",
   "commitment_unbooked",
   "commitment_owed",
+  "ask_unanswered",
 ] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 

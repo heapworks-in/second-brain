@@ -22,6 +22,8 @@ const DEFAULTS = {
   /** Days somebody waits before it is a wait rather than a conversation that just happened.
    * Two, not one: asked yesterday and not done today is a normal Tuesday. */
   "desk.owedWaitDays": 2,
+  /** Hours an outside ask sits before it is a backlog item rather than a live conversation. */
+  "desk.askWaitHours": 4,
   /** Days a snooze lasts. "Not now" is one key; choosing a date is three. */
   "desk.snoozeDays": 7,
 } as const;

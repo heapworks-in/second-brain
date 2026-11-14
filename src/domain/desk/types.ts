@@ -9,7 +9,7 @@ import type { DB } from "@/db/client";
 export interface ProposalDraft {
   kind: ProposalKind;
   /** Which table the evidence came from, for the card's own attribution. */
-  source: "meeting" | "decision" | "task" | "prediction" | "item";
+  source: "meeting" | "decision" | "task" | "prediction" | "item" | "observation";
   /** Identity across sweeps. Stable for as long as the thing being proposed is the same thing. */
   sourceRef: string;
   title: string;
