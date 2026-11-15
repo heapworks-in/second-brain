@@ -40,6 +40,34 @@ function payloadOf<T>(proposal: Proposal): T {
 }
 
 /**
+ * Put a task on today's plan, which is what accepting means for the two kinds whose answer is
+ * "today holds this": a commitment somebody is waiting on, and a date that has already passed.
+ *
+ * Already being on today's plan is not an error worth stopping for -- the answer the card asks for
+ * is that today holds it, and it does. The undo then has nothing to take back, which is why it is
+ * conditional rather than an unconditional remove that would throw away a plan entry the person
+ * had put there themselves.
+ */
+function planForToday(db: DB, taskId: number, now: Date, label: (already: boolean) => string) {
+  const today = localDay(now.toISOString());
+  const task = getTask(db, taskId);
+  if (!task) throw new DeskError("That task is no longer there", 404);
+  const already = db
+    .select({ id: dailyPlanEntries.id })
+    .from(dailyPlanEntries)
+    .where(and(eq(dailyPlanEntries.taskId, taskId), eq(dailyPlanEntries.date, today)))
+    .get();
+  if (!already) addToPlan(db, today, taskId);
+  return {
+    label: label(Boolean(already)),
+    href: "/planner",
+    undo: () => {
+      if (!already) removeFromPlan(db, today, taskId);
+    },
+  };
+}
+
+/**
  * What accepting commits, per kind, and how to put it back.
  *
  * Every arm calls the same domain functions the rest of the app does -- `fileItem`,
@@ -125,24 +153,20 @@ function commit(db: DB, proposal: Proposal, now: Date): { label: string; href?: 
 
     case "commitment_owed": {
       const p = payloadOf<{ taskId: number; personName: string }>(proposal);
-      const today = localDay(now.toISOString());
-      const task = getTask(db, p.taskId);
-      if (!task) throw new DeskError("That task is no longer there", 404);
-      // Already on today's plan is not an error worth stopping for -- the answer the card asks
-      // for is "today holds this", and it does. The undo then has nothing to take back.
-      const already = db
-        .select({ id: dailyPlanEntries.id })
-        .from(dailyPlanEntries)
-        .where(and(eq(dailyPlanEntries.taskId, p.taskId), eq(dailyPlanEntries.date, today)))
-        .get();
-      if (!already) addToPlan(db, today, p.taskId);
-      return {
-        label: already ? "Already on today's plan" : `Planned for today${p.personName ? ` for ${p.personName}` : ""}`,
-        href: "/planner",
-        undo: () => {
-          if (!already) removeFromPlan(db, today, p.taskId);
-        },
-      };
+      return planForToday(db, p.taskId, now, (already) =>
+        already ? "Already on today's plan" : `Planned for today${p.personName ? ` for ${p.personName}` : ""}`,
+      );
+    }
+
+    case "task_overdue": {
+      const p = payloadOf<{ taskId: number; dueDate: string }>(proposal);
+      // The date is pointedly NOT moved. Re-dating it here would make the card disappear by
+      // rewriting the evidence that produced it, and a due date that silently slides is the
+      // thing that let eight of these pile up unnoticed in the first place. Accepting says when
+      // the work happens; the date stays as the record of when it was meant to.
+      return planForToday(db, p.taskId, now, (already) =>
+        already ? "Already on today's plan" : "Planned for today",
+      );
     }
 
     case "prediction_due": {

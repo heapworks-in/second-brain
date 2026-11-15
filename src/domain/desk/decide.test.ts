@@ -195,6 +195,48 @@ describe("decideProposal", () => {
       expect(() => decideProposal(t.db, p.id, "accept", NOW)).toThrow(/no longer there/);
     });
   });
+  describe("task_overdue", () => {
+    it("puts it on today's plan and leaves the missed date exactly where it was", () => {
+      t = makeTestDb();
+      const task = t.db
+        .insert(tasks)
+        .values({ title: "Review the migration plan", dueDate: "2026-11-01", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() })
+        .returning()
+        .get();
+      const p = open({ kind: "task_overdue", payload: { taskId: task.id, dueDate: "2026-11-01" } });
+
+      const decided = decideProposal(t.db, p.id, "accept", NOW);
+      expect(decided.label).toBe("Planned for today");
+      expect(decided.href).toBe("/planner");
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(1);
+      // Re-dating it would make the card vanish by rewriting the evidence that raised it, and a
+      // due date that quietly slides is how eight of these accumulated unnoticed. Accepting says
+      // when the work happens; the date stays as the record of when it was meant to.
+      expect(getTask(t.db, task.id)!.dueDate).toBe("2026-11-01");
+      expect(getTask(t.db, task.id)!.status).toBe("open");
+
+      undoProposal(t.db, p.id);
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(0);
+      expect(getTask(t.db, task.id)!.dueDate).toBe("2026-11-01");
+    });
+
+    it("says so rather than failing when today already holds it", () => {
+      t = makeTestDb();
+      const task = t.db.insert(tasks).values({ title: "Review the migration plan", dueDate: "2026-11-01", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() }).returning().get();
+      t.db.insert(dailyPlanEntries).values({ date: "2026-11-08", taskId: task.id, createdAt: NOW.toISOString() }).run();
+      const p = open({ kind: "task_overdue", payload: { taskId: task.id, dueDate: "2026-11-01" } });
+
+      expect(decideProposal(t.db, p.id, "accept", NOW).label).toBe("Already on today's plan");
+      undoProposal(t.db, p.id);
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(1);
+    });
+
+    it("refuses a task that has since been deleted", () => {
+      t = makeTestDb();
+      const p = open({ kind: "task_overdue", payload: { taskId: 404, dueDate: "2026-11-01" } });
+      expect(() => decideProposal(t.db, p.id, "accept", NOW)).toThrow(/no longer there/);
+    });
+  });
   describe("prediction_due", () => {
     it("commits nothing and sends you where the answer can be given", () => {
       t = makeTestDb();

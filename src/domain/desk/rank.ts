@@ -43,6 +43,9 @@ const DEFAULT_WEIGHTS: Record<ProposalKind, number> = {
   // commitment it turns into, because that one has at least been written down.
   ask_unanswered: 0.8,
   prediction_due: 0.8,
+  // A date the person set themselves and let pass. Above an overrun because an estimate being
+  // wrong is a guess that missed, while this is a commitment that did.
+  task_overdue: 0.75,
   task_overrun: 0.7,
   task_stalled: 0.6,
   capture_unfiled: 0.5,

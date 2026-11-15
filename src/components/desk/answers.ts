@@ -16,6 +16,7 @@ export const PRIMARY_LABELS: Record<ProposalKind, string> = {
   decision_stale: "Reaffirm",
   task_overrun: "Re-estimate",
   task_stalled: "Take it off the plan",
+  task_overdue: "Plan it for today",
   prediction_due: "Resolve it",
   capture_unfiled: "File it",
   commitment_unbooked: "Book it",

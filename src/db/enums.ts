@@ -105,6 +105,7 @@ export const PROPOSAL_KINDS = [
   "decision_stale",
   "task_overrun",
   "task_stalled",
+  "task_overdue",
   "prediction_due",
   "capture_unfiled",
   "commitment_unbooked",

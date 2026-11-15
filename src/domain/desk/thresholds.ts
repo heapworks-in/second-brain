@@ -24,6 +24,10 @@ const DEFAULTS = {
   "desk.owedWaitDays": 2,
   /** Hours an outside ask sits before it is a backlog item rather than a live conversation. */
   "desk.askWaitHours": 4,
+  /** Days past its due date before a task is late rather than being finished today. One: a date
+   * that passed yesterday has already passed, and pretending otherwise is how eight of them
+   * accumulated unnoticed. */
+  "desk.overdueGraceDays": 1,
   /** Days a snooze lasts. "Not now" is one key; choosing a date is three. */
   "desk.snoozeDays": 7,
 } as const;

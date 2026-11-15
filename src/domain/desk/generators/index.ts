@@ -8,6 +8,7 @@ import { decisionStale } from "./decision-stale";
 import { meetingUnprepared } from "./meeting-unprepared";
 import { predictionDue } from "./prediction-due";
 import { taskOverrun } from "./task-overrun";
+import { taskOverdue } from "./task-overdue";
 import { taskStalled } from "./task-stalled";
 
 /**
@@ -22,6 +23,7 @@ export const GENERATORS: { name: string; run: Generator }[] = [
   { name: "prediction_due", run: predictionDue },
   { name: "task_overrun", run: taskOverrun },
   { name: "task_stalled", run: taskStalled },
+  { name: "task_overdue", run: taskOverdue },
   { name: "capture_unfiled", run: captureUnfiled },
   { name: "decision_stale", run: decisionStale },
   { name: "ask_unanswered", run: askUnanswered },
