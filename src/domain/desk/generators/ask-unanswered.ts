@@ -1,4 +1,4 @@
-import { isNull } from "drizzle-orm";
+import { and, isNull, ne } from "drizzle-orm";
 import { observations } from "@/db/schema";
 import { threshold } from "../thresholds";
 import type { Generator } from "../types";
@@ -34,7 +34,17 @@ function oneLine(text: string, max = 90): string {
  */
 export const askUnanswered: Generator = (db, now) => {
   const waitHours = threshold(db, "desk.askWaitHours");
-  const rows = db.select().from(observations).where(isNull(observations.taskId)).orderBy(observations.at).limit(ASK_CAP).all();
+  // Broadcasts are excluded in SQL, not after the fetch: the cap is applied by the query, so
+  // twenty `@channel` announcements would otherwise fill it and starve every real ask behind them.
+  // `kind` is settled at ingest (classifyKind) precisely so this still holds once the text's TTL
+  // has dropped the words it was judged on.
+  const rows = db
+    .select()
+    .from(observations)
+    .where(and(isNull(observations.taskId), ne(observations.kind, "broadcast")))
+    .orderBy(observations.at)
+    .limit(ASK_CAP)
+    .all();
 
   return rows.flatMap((row) => {
     const hours = (now.getTime() - Date.parse(row.at)) / 3_600_000;

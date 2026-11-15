@@ -29,6 +29,30 @@ export interface IngestResult {
 export const TEXT_TTL_DAYS = 14;
 
 /**
+ * A message that opens with one of these was addressed to a room, not to you.
+ *
+ * Slack's Activity view lists `@channel` announcements beside genuine mentions, and on a busy
+ * announcements channel they are nearly all of it -- a real workspace showed eleven consecutive
+ * job-posting broadcasts and not one personal ask. Treated as asks they would fill the desk's cap
+ * of twenty and starve the mentions that actually owe somebody a reply.
+ */
+const BROADCAST_OPENERS = /^\s*@(channel|here|everyone)\b/i;
+
+/**
+ * Settled once, at ingest, rather than inferred later from the text.
+ *
+ * Text is dropped after TEXT_TTL_DAYS, so a generator asking "does this read like a broadcast?"
+ * would start answering "no" on day fifteen and raise a card for an announcement nobody owes.
+ * Deciding here keeps it true for as long as the row exists -- and it is decided for every adaptor
+ * at once, which matters because the Chrome one reads the same view and had the same problem.
+ *
+ * This is the server judging, which is its job: the adaptor reported faithfully what it saw.
+ */
+export function classifyKind(kind: string, text?: string): string {
+  return text && BROADCAST_OPENERS.test(text) ? "broadcast" : kind;
+}
+
+/**
  * Upsert a batch, matching on `(source, externalId)`.
  *
  * Re-running a backfill must not duplicate: a backfill is a scroll back through Slack's Activity
@@ -51,7 +75,7 @@ export function ingestObservations(db: DB, rows: ObservationInput[], now = new D
         .get();
       const values = {
         at: row.at,
-        kind: row.kind,
+        kind: classifyKind(row.kind, row.text),
         actorHandle: row.actorHandle ?? null,
         actorName: row.actorName ?? null,
         text: row.text ?? "",

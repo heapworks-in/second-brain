@@ -82,3 +82,26 @@ describe("askUnanswered", () => {
     expect(askUnanswered(t.db, NOW)[0].payload.askedAt).toBe("2026-11-01T09:00:00.000Z");
   });
 });
+
+describe("askUnanswered and broadcasts", () => {
+  it("does not ask you to answer an announcement", () => {
+    t = makeTestDb();
+    ask({ text: "@channel New Engineering Lead job in Toronto Canada" });
+    expect(askUnanswered(t.db, NOW)).toHaveLength(0);
+  });
+
+  it("does not let announcements crowd out real asks", () => {
+    // The cap is applied by the query, so excluding broadcasts has to happen in SQL. Filtered
+    // afterwards instead, these twenty-five announcements would fill the cap of twenty and the
+    // one genuine ask behind them would never reach the desk at all.
+    t = makeTestDb();
+    for (let i = 0; i < 25; i++) {
+      ask({ at: `2026-10-${String(i + 1).padStart(2, "0")}T09:00:00.000Z`, text: `@channel posting ${i}` });
+    }
+    ask({ at: "2026-11-01T09:00:00.000Z", text: "can you confirm the Q4 numbers before Friday?" });
+
+    const out = askUnanswered(t.db, NOW);
+    expect(out).toHaveLength(1);
+    expect(out[0].title).toContain("Q4 numbers");
+  });
+});

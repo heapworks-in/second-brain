@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { observations } from "@/db/schema";
 import { createTask } from "@/domain/tasks";
-import { ingestObservations, linkObservationToTask, openObservations, sweepObservationText } from "./index";
+import { classifyKind, ingestObservations, linkObservationToTask, openObservations, sweepObservationText } from "./index";
 
 let t: TestDb;
 afterEach(() => t?.cleanup());
@@ -97,5 +97,35 @@ describe("sweepObservationText", () => {
     t = makeTestDb();
     ingestObservations(t.db, [obs({ at: "2026-11-10T09:00:00.000Z" })], NOW);
     expect(sweepObservationText(t.db, NOW)).toBe(0);
+  });
+});
+
+describe("classifyKind", () => {
+  it("marks a message addressed to the room, not to you", () => {
+    // Slack's Activity view lists @channel announcements beside genuine mentions. A real
+    // workspace's view was eleven consecutive job-posting broadcasts and no personal ask at all.
+    for (const opener of ["@channel", "@here", "@everyone", "  @Channel", "@HERE everyone look"]) {
+      expect(classifyKind("mention", `${opener} new job posted`)).toBe("broadcast");
+    }
+  });
+
+  it("leaves a real mention alone", () => {
+    expect(classifyKind("mention", "can you confirm the Q4 numbers?")).toBe("mention");
+    expect(classifyKind("dm", "@priya and I discussed @channel strategy")).toBe("dm");
+    expect(classifyKind("mention", undefined)).toBe("mention");
+  });
+
+  it("decides at ingest, so the verdict outlives the text", () => {
+    t = makeTestDb();
+    ingestObservations(t.db, [obs({ text: "@channel new job posted" })], NOW);
+    const [row] = t.db.select().from(observations).all();
+    expect(row.kind).toBe("broadcast");
+
+    // The words it was judged on are dropped after the TTL; the verdict must not be re-derivable
+    // from an empty string, or day fifteen would quietly promote an announcement to an ask.
+    sweepObservationText(t.db, new Date("2026-12-14T12:00:00.000Z"));
+    const [swept] = t.db.select().from(observations).all();
+    expect(swept.text).toBe("");
+    expect(swept.kind).toBe("broadcast");
   });
 });
