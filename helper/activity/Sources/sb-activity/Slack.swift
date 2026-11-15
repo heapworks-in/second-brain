@@ -44,7 +44,7 @@ final class SlackReader {
 
     // MARK: - The two id schemes
 
-    /// An Activity row: `at_channel-C0CLCR9BL-1794429455.856259` -- what kind of activity, then the
+    /// An Activity row: `at_channel-C0A1B2C3D-1794429455.100200` -- what kind of activity, then the
     /// channel, then Slack's own `ts`. Both ids come straight out of this, which matters because an
     /// Activity row carries no permalink to read them off instead.
     ///
@@ -58,18 +58,18 @@ final class SlackReader {
     private static let otherRowId = try! NSRegularExpression(
         pattern: #"^([a-z_]+)-([CDG][A-Z0-9]{6,})-(\d{10,}\.\d{1,6})$"#)
     /// A channel row, which only the diagnostic's --any-view reaches:
-    /// `message-list_1793915061.120209`. The underscore is what separates a message from the
-    /// furniture sharing the prefix -- date separators are `message-list_1793903400000.C0CLCR9BL`,
+    /// `message-list_1793915061.100300`. The underscore is what separates a message from the
+    /// furniture sharing the prefix -- date separators are `message-list_1793903400000.C0A1B2C3D`,
     /// plus `...divider` and `message-list_bottomSpacer`. A separator read as a message would hand
     /// the desk "Friday, November 6th" as something a colleague is waiting on.
     private static let channelRowId = try! NSRegularExpression(pattern: #"_(\d{10,}\.\d{1,6})$"#)
 
     /// A channel row's timestamp link carries both ids: `/archives/<channel>/p<ts-without-dot>`.
     private static let permalink = try! NSRegularExpression(pattern: #"/archives/([A-Z0-9]+)/p?(\d+)"#)
-    /// `... mentioned you in #your-next-job: ...` -- the channel's NAME, which an Activity row has
+    /// `... mentioned you in #project-atlas: ...` -- the channel's NAME, which an Activity row has
     /// only in its label. The sidebar is not rendered in this view, so there is no id to resolve.
     private static let hashName = try! NSRegularExpression(pattern: #"#([^\s:]+)"#)
-    /// `https://app.slack.com/client/T0CLCJ1AM/activity-inbox` -- needed to rebuild a permalink an
+    /// `https://app.slack.com/client/T0H7I8J9K/activity-inbox` -- needed to rebuild a permalink an
     /// Activity row does not carry.
     private static let teamId = try! NSRegularExpression(pattern: #"/client/(T[A-Z0-9]+)"#)
     private static let nonSlug = try! NSRegularExpression(pattern: #"[^a-z0-9]+"#)

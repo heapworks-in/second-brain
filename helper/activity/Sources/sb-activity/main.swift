@@ -104,11 +104,11 @@ if args.contains("--slack-self-check") {
     // timestamp with a HYPHEN, and reading it with the channel view's underscore pattern is exactly
     // why the first live run against a view holding eleven mentions reported nothing at all.
     let expected: [(String, String, String)] = [
-        ("at_channel-C0CLCR9BL-1794429455.856259", "activity", "1794429455.856259"),
-        ("at_channel-C0CLCR9BL-1791486074.215379", "activity", "1791486074.215379"),
-        ("at_user-DLE1NE6EB-1794261259.395509", "activity", "1794261259.395509"),
-        ("message-list_1793915061.120209", "channel", "1793915061.120209"),
-        ("message-list_1794429455.856259", "channel", "1794429455.856259"),
+        ("at_channel-C0A1B2C3D-1794429455.100200", "activity", "1794429455.100200"),
+        ("at_channel-C0A1B2C3D-1791486074.100500", "activity", "1791486074.100500"),
+        ("at_user-D0L1M2N3O-1794261259.100400", "activity", "1794261259.100400"),
+        ("message-list_1793915061.100300", "channel", "1793915061.100300"),
+        ("message-list_1794429455.100200", "channel", "1794429455.100200"),
     ]
     for (id, scheme, ts) in expected {
         guard SlackReader.scheme(domId: id) == scheme, SlackReader.timestamp(domId: id) == ts else {
@@ -118,16 +118,16 @@ if args.contains("--slack-self-check") {
     }
     // Furniture and chrome. A date separator read as a message hands the desk "Friday, November
     // 6th" as something a colleague is waiting on.
-    let furniture = ["message-list_1793903400000.C0CLCR9BL", "message-list_1794249000000divider",
-                     "message-list_bottomSpacer", "activity-inbox", "home", "C0CL9G6CF",
+    let furniture = ["message-list_1793903400000.C0A1B2C3D", "message-list_1794249000000divider",
+                     "message-list_bottomSpacer", "activity-inbox", "home", "C0D4E5F6G",
                      "Friday, November 6th", "top-anchor-hack", "activity_search_button"]
     for id in furniture where SlackReader.timestamp(domId: id) != nil {
         log("FAIL: \(id) was read as a message"); exit(1)
     }
     // An unknown kind is reported, not read: a reaction is not an ask, and a card saying somebody
     // is waiting on you for one would be worse than missing it.
-    guard SlackReader.scheme(domId: "reaction-C0CLCR9BL-1794429455.856259") == "unknown:reaction",
-          SlackReader.timestamp(domId: "reaction-C0CLCR9BL-1794429455.856259") == nil else {
+    guard SlackReader.scheme(domId: "reaction-C0A1B2C3D-1794429455.100200") == "unknown:reaction",
+          SlackReader.timestamp(domId: "reaction-C0A1B2C3D-1794429455.100200") == nil else {
         log("FAIL: an unknown row kind was not held back"); exit(1)
     }
     print("slack self-check ok: \(expected.count) rows across 2 schemes, \(furniture.count) non-messages, 1 unknown kind held back")
