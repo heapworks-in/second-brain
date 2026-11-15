@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db/client";
-import { TASK_STATUSES } from "@/db/enums";
+import { CONTAINER_KINDS, TASK_STATUSES } from "@/db/enums";
 import { applyImport, previewImport } from "@/domain/trackers/import";
 import { TRACKER_FIELDS } from "@/domain/trackers/mapping";
 import { setIdentityNames } from "@/domain/trackers/identity";
@@ -14,6 +14,8 @@ const Body = z
   .object({
     name: z.string().min(1).max(120),
     containerId: z.number().int().positive().nullable().default(null),
+    /** Null means "do not invent containers"; the rows import unfiled. */
+    createMissingAs: z.enum(CONTAINER_KINDS).nullable().default(null),
     sourceName: z.string().max(200).default(""),
     sheetName: z.string().max(120).default(""),
     headers: z.array(z.string()).min(1).max(100),

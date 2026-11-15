@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { createPerson, listPeople } from "@/domain/people";
-import { listContainers } from "@/domain/containers";
+import { createContainer, listContainers } from "@/domain/containers";
 import { completeTask, getTask, listTasks } from "@/domain/tasks";
 import { guessMapping, guessStatusMap, statusWords, type Mapping } from "./mapping";
 import { applyImport, previewImport, type ImportInput } from "./import";
@@ -135,9 +135,11 @@ describe("applyImport", () => {
     expect([mine.dueDate, mine.status, mine.statusLabel]).toEqual(["2026-11-20", "done", "Done"]);
   });
 
-  it("files each row in a project of its own when Theme is read that way", () => {
+  it("files each row in a container of its own when Theme is read that way and creating is asked for", () => {
     const columns = guessMapping(HEADERS);
-    const out = applyImport(t.db, input({ mapping: { columns, theme: "container" } }));
+    // `createMissingAs` is what opts in now. Without it the rows still import, unfiled -- the
+    // import no longer manufactures a container for a name it has never seen.
+    const out = applyImport(t.db, input({ mapping: { columns, theme: "container" }, createMissingAs: "project" }));
     expect(listContainers(t.db, { kind: "project" }).map((c) => c.name).sort()).toEqual(["Migration", "Reporting"]);
     const rows = listTasks(t.db, { trackerId: out.tracker.id, status: "all", owner: "anyone" });
     // The theme became the home, so it is not also kept as a label on the row.
@@ -150,5 +152,48 @@ describe("applyImport", () => {
     const blocked = listTasks(t.db, { trackerId: out.tracker.id, status: "all", owner: "anyone" }).find((r) => r.title === "Cut over")!;
     completeTask(t.db, blocked.id);
     expect(getTask(t.db, blocked.id)!.statusLabel).toBe("Done");
+  });
+});
+
+describe("what a theme column is allowed to create", () => {
+  /** The theme column mapped to containers, which is when unmatched names become a question. */
+  function themed(over: Partial<ImportInput> = {}) {
+    const columns = guessMapping(HEADERS);
+    return input({ mapping: { columns, theme: "container" }, ...over });
+  }
+
+  it("invents nothing by default, and still imports the rows", () => {
+    // This used to manufacture a project per unmatched name. A spreadsheet column of team names
+    // or areas of responsibility would quietly fill the projects list with things nobody created.
+    applyImport(t.db, themed());
+    expect(listContainers(t.db, {})).toHaveLength(0);
+    const tasks = listTasks(t.db, { status: "all", owner: "anyone" });
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks.every((task) => task.containerId === null)).toBe(true);
+  });
+
+  it("creates the kind it was asked for, not always a project", () => {
+    applyImport(t.db, themed({ createMissingAs: "area" }));
+    const made = listContainers(t.db, {});
+    expect(made.map((c) => c.name).sort()).toEqual(["Migration", "Reporting"]);
+    expect(made.every((c) => c.kind === "area")).toBe(true);
+  });
+
+  it("files rows under an existing container of any kind, rather than making a second one", () => {
+    // Matching was never the problem -- it already spans every kind. Only creation assumed one.
+    const area = createContainer(t.db, { kind: "area", name: "Migration" });
+    const resource = createContainer(t.db, { kind: "resource", name: "Reporting" });
+    applyImport(t.db, themed());
+
+    expect(listContainers(t.db, {})).toHaveLength(2);
+    const filed = listTasks(t.db, { status: "all", owner: "anyone" }).filter((task) => task.containerId !== null);
+    expect(filed.length).toBeGreaterThan(0);
+    expect(new Set(filed.map((task) => task.containerId))).toEqual(new Set([area.id, resource.id]));
+  });
+
+  it("lets a tracker itself sit against an area", () => {
+    const area = createContainer(t.db, { kind: "area", name: "Platform health" });
+    const out = applyImport(t.db, input({ containerId: area.id }));
+    expect(out.tracker.containerId).toBe(area.id);
   });
 });

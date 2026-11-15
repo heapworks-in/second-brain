@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload } from "lucide-react";
 import type { ContainerRefDTO } from "@/lib/dto";
-import type { TaskStatus } from "@/db/enums";
+import { CONTAINER_KINDS, type ContainerKind, type TaskStatus } from "@/db/enums";
 import { TRACKER_FIELDS, type Mapping, type TrackerField } from "@/domain/trackers/mapping";
 import type { ImportPlan } from "@/domain/trackers/import";
 import { Button, Chip } from "../ui";
@@ -55,6 +55,9 @@ export function ImportCard({ containers }: { containers: ContainerRefDTO[] }) {
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [name, setName] = useState("");
   const [containerId, setContainerId] = useState<number | null>(null);
+  /** Null means "do not invent containers". The default, because a theme column of team names
+   * used to manufacture a project apiece without ever saying so. */
+  const [createMissingAs, setCreateMissingAs] = useState<ContainerKind | null>(null);
   const [mapping, setMapping] = useState<Mapping>({ columns: {}, theme: "group" });
   const [statusMap, setStatusMap] = useState<Record<string, TaskStatus>>({});
   const [mine, setMine] = useState<string[]>([]);
@@ -98,6 +101,7 @@ export function ImportCard({ containers }: { containers: ContainerRefDTO[] }) {
     const body = {
       name: name || sheetName,
       containerId,
+      createMissingAs,
       sourceName: parsed.sourceName,
       sheetName,
       headers: chosen.headers,
@@ -146,6 +150,7 @@ export function ImportCard({ containers }: { containers: ContainerRefDTO[] }) {
         body: JSON.stringify({
           name: name || sheet.name,
           containerId,
+      createMissingAs,
           sourceName: parsed.sourceName,
           sheetName: sheet.name,
           headers: sheet.headers,
@@ -244,10 +249,12 @@ export function ImportCard({ containers }: { containers: ContainerRefDTO[] }) {
             onChange={(e) => setContainerId(e.target.value ? Number(e.target.value) : null)}
             className="focus-ring h-9 px-2 rounded-md bg-layer-2 border border-hairline text-[13.5px] text-fg"
           >
-            <option value="">No project</option>
+            {/* Not "No project": a tracker can sit against an area or a resource just as well, and
+                plenty belong nowhere at all. */}
+            <option value="">Nothing — leave it unfiled</option>
             {containers.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.name} ({c.kind})
               </option>
             ))}
           </select>
@@ -291,10 +298,43 @@ export function ImportCard({ containers }: { containers: ContainerRefDTO[] }) {
                   void recheck({ mapping: next });
                 }}
               >
-                {mode === "group" ? "A grouping on each row" : "The project each row belongs to"}
+                {mode === "group" ? "A grouping on each row" : "What each row belongs to"}
               </Chip>
             ))}
           </div>
+          {mapping.theme === "container" && (
+            <label className="flex flex-col gap-1 text-[12.5px] text-fg-muted">
+              A name that matches nothing here
+              <select
+                value={createMissingAs ?? ""}
+                onChange={(e) => {
+                  const next = (e.target.value || null) as ContainerKind | null;
+                  setCreateMissingAs(next);
+                  void recheck({});
+                }}
+                className="focus-ring h-9 px-2 rounded-md bg-layer-2 border border-hairline text-[13.5px] text-fg"
+              >
+                <option value="">Leave those rows unfiled</option>
+                {CONTAINER_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    Create {kind === "area" ? "an" : "a"} {kind}
+                  </option>
+                ))}
+              </select>
+              {plan && plan.containers.some((c) => c.containerId === null) && (
+                <span className="text-[11.5px] text-fg-faint">
+                  {plan.containers.filter((c) => c.containerId === null).length} name
+                  {plan.containers.filter((c) => c.containerId === null).length === 1 ? "" : "s"} match nothing yet:{" "}
+                  {plan.containers
+                    .filter((c) => c.containerId === null)
+                    .slice(0, 4)
+                    .map((c) => c.name)
+                    .join(", ")}
+                  {plan.containers.filter((c) => c.containerId === null).length > 4 ? "…" : ""}
+                </span>
+              )}
+            </label>
+          )}
         </div>
       )}
 

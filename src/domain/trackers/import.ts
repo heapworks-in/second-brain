@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { DB } from "@/db/client";
-import type { TaskStatus } from "@/db/enums";
+import type { ContainerKind, TaskStatus } from "@/db/enums";
 import { trackers, type Task, type Tracker } from "@/db/schema";
 import { createContainer, listContainers, slugify } from "@/domain/containers";
 import { createPerson, listPeople, updatePerson } from "@/domain/people";
@@ -21,7 +21,19 @@ export class TrackerError extends Error {
 export interface ImportInput {
   /** What the tracker is called here. Defaults to the sheet or file name upstream, never guessed. */
   name: string;
+  /** Where the tracker itself is filed. Any kind of container, or nothing -- a tracker about an
+   * area of responsibility is not a project, and a standalone one belongs to nothing at all. */
   containerId: number | null;
+  /**
+   * What to do with a theme name that matches no existing container: make one of this kind, or
+   * leave those rows unfiled.
+   *
+   * Null is the default, and deliberately so. This used to be hardcoded to `project`, which meant
+   * a spreadsheet column of team names or areas of responsibility silently manufactured a project
+   * apiece -- inventing structure the person never asked for, in the one kind that happened to be
+   * written down. Creating nothing is the honest default; the rows still import, unfiled.
+   */
+  createMissingAs?: ContainerKind | null;
   sourceName: string;
   sheetName: string;
   headers: string[];
@@ -230,9 +242,13 @@ export function applyImport(db: DB, input: ImportInput): { tracker: Tracker; cre
     if (current && !current.team) updatePerson(db, id, { team });
   }
 
+  // An unmatched name becomes a container only when asked. Matching already spans every kind
+  // (listContainers with no filter), so an existing area or resource is found by name just as a
+  // project is -- it was only creation that assumed one kind.
   const containerByName = new Map<string, number>();
   for (const c of plan.containers) {
-    containerByName.set(c.name.toLowerCase(), c.containerId ?? createContainer(db, { kind: "project", name: c.name }).id);
+    const id = c.containerId ?? (input.createMissingAs ? createContainer(db, { kind: input.createMissingAs, name: c.name }).id : null);
+    if (id !== null) containerByName.set(c.name.toLowerCase(), id);
   }
 
   const tracker =
