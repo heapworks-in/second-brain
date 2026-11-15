@@ -145,6 +145,42 @@ fn ensure_code_installed(app: &AppHandle) -> std::io::Result<(PathBuf, bool)> {
     Ok((dest, false))
 }
 
+/// The adaptor folder's path, without touching the disk -- what the server is told about.
+fn adaptor_dir(app: &AppHandle) -> PathBuf {
+    app.path().app_data_dir().expect("app data dir").join("extension")
+}
+
+/// Where the bundled Chrome adaptor is unpacked, and kept.
+///
+/// A *sibling* of `code_dir`, never inside it: `ensure_code_installed` deletes `current/`
+/// wholesale on every update, and an unpacked extension whose folder disappears out from under
+/// Chrome gets disabled -- the person would have to re-add it after each app update, which is
+/// exactly the friction bundling it is supposed to remove. Here the folder is only ever copied
+/// over, so the path Chrome was given stays valid and simply contains newer code.
+///
+/// That is the real reason to ship it with the app rather than tell someone to clone a repo:
+/// when Slack moves its DOM, the fixed selectors arrive with the next app update.
+fn ensure_adaptor_installed(app: &AppHandle) -> std::io::Result<PathBuf> {
+    let dest = adaptor_dir(app);
+    let marker = dest.join(".version");
+    let bundled_version = app.package_info().version.to_string();
+    let already_current = std::fs::read_to_string(&marker)
+        .map(|v| v.trim() == bundled_version)
+        .unwrap_or(false);
+    if already_current && dest.join("manifest.json").exists() {
+        return Ok(dest);
+    }
+    let src = app.path().resource_dir().expect("resource dir").join("extension");
+    // Not fatal if it is missing: a build without the sibling adaptors repo checked out still
+    // produces a working app, it just has no extension to offer.
+    if !src.join("manifest.json").exists() {
+        return Ok(dest);
+    }
+    copy_dir_recursive(&src, &dest)?;
+    std::fs::write(&marker, &bundled_version)?;
+    Ok(dest)
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
@@ -314,6 +350,9 @@ fn spawn_server(app: &AppHandle, dir: &Path) -> std::io::Result<Child> {
         .current_dir(dir)
         .env("PORT", PORT)
         .env("HOSTNAME", "127.0.0.1")
+        // So Settings can show where the bundled extension landed and open the folder. The
+        // server has no other way to know: it is the Tauri shell that unpacked it.
+        .env("SB_ADAPTORS_DIR", adaptor_dir(app))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
@@ -398,6 +437,10 @@ fn start_bringup(handle: AppHandle) {
                 return;
             }
         };
+        // Never fatal: a missing or unreadable adaptor costs the Slack reader, not the app.
+        if let Err(e) = ensure_adaptor_installed(&handle) {
+            emit_log(&handle, format!("Could not unpack the Chrome adaptor: {e}"));
+        }
         emit_step(&handle, "install", "done");
 
         if !port_is_open(PORT) {

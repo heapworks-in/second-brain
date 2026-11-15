@@ -70,6 +70,14 @@ if [ -d "$RESOURCES/desktop" ]; then
 else
   pass "desktop/ correctly absent"
 fi
+# The bundled Chrome adaptor sits beside server/, not inside it. A build run without the sibling
+# sb-adaptors repo checked out produces a working app with nothing to offer in Settings > Slack,
+# and that is silent without this.
+if [ -f "$RESOURCES/../extension/manifest.json" ]; then
+  pass "Chrome adaptor bundled"
+else
+  fail "no Chrome adaptor in the bundle -- the copy from ../sb-adaptors was skipped"
+fi
 
 step "Extract to a directory outside the repo"
 WORK="$(mktemp -d)"

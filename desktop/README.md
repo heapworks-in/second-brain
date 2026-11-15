@@ -145,6 +145,11 @@ rsync -a --exclude='.build' helper/ .next/standalone/helper/
 rm -rf .next/standalone/desktop           # see note below -- not optional
 node desktop/scripts/bundle-externals.mjs # see note below -- not optional
 
+# the Chrome adaptor, copied in from the sibling repo -- see note below
+rm -rf desktop/build/extension
+mkdir -p desktop/build
+rsync -a ../sb-adaptors/slack/extension/ desktop/build/extension/
+
 cd desktop
 cargo tauri build                       # .app + .dmg under src-tauri/target/release/bundle/
 
@@ -168,6 +173,20 @@ shipped as present-but-unusable directories. It also rewrites externals to conte
 cannot copy. The script copies each external plus its dependency closure (including the
 platform-specific `optionalDependencies` that carry native binaries, like `sqlite-vec-darwin-arm64`)
 and replaces those alias symlinks with real directories.
+
+The adaptor copy is what puts the Slack reader in the dmg. Its source lives in the sibling
+`sb-adaptors` repo (`heapworks-in/sb-adaptors`, private) and is deliberately not in this one, so
+the build reaches across for it rather than the repo carrying it. `tauri.conf.json` maps
+`../build/extension/` to `extension/` inside the bundle -- beside `server/`, not inside it -- and
+`ensure_adaptor_installed` in `src-tauri/src/lib.rs` unpacks it to
+`~/Library/Application Support/com.second-brain.desktop/extension/`, a *sibling* of `current/`.
+That placement is the point: `ensure_code_installed` deletes `current/` wholesale on every
+update, and an unpacked extension whose folder vanishes gets disabled by Chrome, so it would
+have to be re-added after each update. Where it is, Chrome keeps the same path and simply gets
+newer code -- which is how a fixed Slack selector reaches every machine.
+
+A build without that repo checked out still produces a working app; `smoke-test.sh` fails it
+rather than letting a release ship with an empty Settings > Slack.
 
 The `rm -rf .next/standalone/desktop` step is required, not cleanup. `next build` defaults to
 Turbopack, whose file tracer swept this entire directory (including `src-tauri/target/`, a

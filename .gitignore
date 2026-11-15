@@ -46,3 +46,6 @@ next-env.d.ts
 # ~/Library/Application Support/second-brain/programs/.
 programs/*.json
 !programs/example.json
+
+# staging for bundled adaptors, copied from the sibling sb-adaptors repo at build time
+desktop/build/

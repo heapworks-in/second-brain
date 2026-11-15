@@ -2,6 +2,7 @@
 
 import { SectionHeading } from "../ui";
 import { CalendarFeed } from "../planner/calendar-feed";
+import { AdaptorsSection } from "./adaptors-section";
 import { IdentitySection } from "./identity-section";
 import { ModelsSection, type ModelsPayload } from "./models-section";
 import { FocusSection, MeetingsSection, PlannerSection, type MeetingSettings, type PlannerSettings } from "./simple-sections";
@@ -37,6 +38,7 @@ export function SettingsPage({ initial }: { initial: SettingsPayload }) {
       </section>
 
       <IdentitySection initial={initial.identityNames} />
+      <AdaptorsSection />
       <MeetingsSection initial={initial.meetings} />
       <PlannerSection initial={initial.planner} />
       <FocusSection initial={initial.focus} />
