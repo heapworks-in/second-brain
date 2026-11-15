@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 import { readHelperToken } from "@/lib/activity-auth";
 import { crossSite, errorResponse, forbidden } from "@/lib/api";
+import { dataDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +31,22 @@ function adaptorDir(): string | null {
   return fs.existsSync(path.join(dir, "manifest.json")) ? dir : null;
 }
 
+/**
+ * The activity helper's binary, which is what the Accessibility grant has to name.
+ *
+ * It cannot be described in prose on the page: the path contains a space, and `set-data-dir` can
+ * move it. macOS pins an Accessibility grant to one exact file, so the instruction is only
+ * actionable with the real path in it.
+ */
+function helperPath(): string | null {
+  const bin = path.join(dataDir(), "bin", "sb-activity");
+  return fs.existsSync(bin) ? bin : null;
+}
+
 export function GET(req: Request): Response {
   if (crossSite(req)) return forbidden();
   try {
-    return NextResponse.json({ extensionPath: adaptorDir(), token: readHelperToken() });
+    return NextResponse.json({ extensionPath: adaptorDir(), token: readHelperToken(), helperPath: helperPath() });
   } catch (err) {
     return errorResponse(err);
   }

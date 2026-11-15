@@ -108,6 +108,17 @@ if command -v swift >/dev/null 2>&1; then
       fail "helper/$pkg does not build from the bundled copy"
     fi
   done
+  # Slack's message list mixes messages with date separators, the unread divider and a bottom
+  # spacer, all sharing one DOM-id prefix. Mistake a separator for a message and the desk is handed
+  # "Friday, November 6th" as something a colleague is waiting on. Offline and deterministic -- it
+  # asserts against ids captured from a real workspace, so it needs no Slack and no permission.
+  if [ -x "$INSTALL/helper/activity/.build/release/sb-activity" ]; then
+    if "$INSTALL/helper/activity/.build/release/sb-activity" --slack-self-check >/dev/null 2>&1; then
+      pass "slack row parsing holds"
+    else
+      fail "slack row parsing is wrong -- it would read a date separator as a message"
+    fi
+  fi
   rm -rf "$INSTALL/helper"/*/.build
 else
   echo "  -- swift not installed, skipping (matches how brain.sh degrades)"

@@ -6,6 +6,10 @@ let SAMPLE_INTERVAL: TimeInterval = 5
 let CALENDAR_INTERVAL: TimeInterval = 300
 let RETRY_INTERVAL: TimeInterval = 30
 let AFK_SECONDS: Double = 180
+/// Slack is polled rather than watched: there is no notification for "the user is looking at
+/// Activity now". Short enough to catch a visit to the Activity view, cheap enough to not matter --
+/// a pass that finds another view open is one tree walk and no request.
+let SLACK_INTERVAL: TimeInterval = 30
 let MAX_BUFFER = 12 * 60 * 60 / 5  // 12 hours of heartbeats
 let EXCLUDED_APP_ID = "excluded"
 
@@ -34,12 +38,63 @@ let tokenPath = "\(dataDir)/activity-token"
 
 let sampler = Sampler()
 let calendar = CalendarReader()
+let slack = SlackReader()
 let encoder = JSONEncoder()
 
 func log(_ s: String) { FileHandle.standardError.write("[sb-activity] \(s)\n".data(using: .utf8)!) }
 
 func currentPermissions() -> Permissions {
     Permissions(accessibility: sampler.accessibilityTrusted, calendar: calendar.granted, automation: sampler.automation)
+}
+
+// A read-only look at what Slack is showing, for when "nothing is arriving" needs explaining.
+// Run from a shell this reports the shell's Accessibility grant, not the launch agent's -- see the
+// note in helper_status.
+if args.contains("--slack") {
+    let anyView = args.contains("--any-view")
+    guard let view = slack.openView() else {
+        print("cannot read Slack: it is not running, has no window, or Accessibility is not granted")
+        exit(1)
+    }
+    print("Slack is showing: \(view)")
+    if view != SlackReader.activityTab && !anyView {
+        print("""
+        Only the Activity view is read. Every row there is somebody addressing you, whereas a
+        channel is full of messages that have nothing to do with you. Open Activity in Slack's left
+        rail, or pass --any-view to see what would be read from the view that is open.
+        """)
+        exit(0)
+    }
+    let observations = slack.read(requireActivity: !anyView) ?? []
+    print("\(observations.count) message(s) readable (Slack renders a viewport, not a feed)")
+    for o in observations.prefix(10) {
+        print("  \(o.at)  \(o.actorName ?? "?")  \(o.context ?? o.externalId)  \(o.text.prefix(60))")
+    }
+    exit(0)
+}
+
+// Asserts the row parsing against ids captured verbatim from a real workspace. Slack's message list
+// mixes messages with date separators, the unread divider and a bottom spacer, all sharing the
+// `message-list_` prefix; a separator read as a message becomes "Friday, November 6th" presented as
+// something a colleague is waiting on.
+if args.contains("--slack-self-check") {
+    let messages = ["message-list_1793915061.120209", "message-list_1794261259.395509",
+                    "message-list_1794429455.856259"]
+    let furniture = ["message-list_1793903400000.C0CLCR9BL", "message-list_1794249000000divider",
+                     "message-list_bottomSpacer", "activity-inbox", "home", "C0CL9G6CF"]
+    for id in messages {
+        guard let ts = SlackReader.timestamp(domId: id), let seconds = Double(ts), seconds > 1_600_000_000 else {
+            log("FAIL: \(id) was not read as a message"); exit(1)
+        }
+    }
+    for id in furniture where SlackReader.timestamp(domId: id) != nil {
+        log("FAIL: \(id) was read as a message"); exit(1)
+    }
+    guard SlackReader.timestamp(domId: "message-list_1793915061.120209") == "1793915061.120209" else {
+        log("FAIL: timestamp not extracted verbatim"); exit(1)
+    }
+    print("slack self-check ok: \(messages.count) messages, \(furniture.count) non-messages")
+    exit(0)
 }
 
 if once {
@@ -69,6 +124,7 @@ var lastCalendar = Date.distantPast
 var lastRetry = Date.distantPast
 var lastHelperInfo = Date.distantPast
 var lastPausedPing = Date.distantPast
+var lastSlack = Date.distantPast
 /// Set when macOS reports a calendar change; the next tick (at most 5 s later) reposts.
 var calendarChanged = false
 
@@ -141,6 +197,27 @@ func tick() {
         let body = CalendarBody(events: calendar.upcoming(now: now), window: calendar.window(now: now), calendarsSeen: calendar.calendarsSeen)
         if let data = try? encoder.encode(body) { _ = client.post("/api/activity/calendar", json: data) }
     }
+    // Slack reads nothing while capture is paused: one switch covers every source, and an adaptor
+    // that kept reading through a pause would be the one thing the pause is meant to stop.
+    if !paused, now.timeIntervalSince(lastSlack) >= SLACK_INTERVAL {
+        lastSlack = now
+        postSlack()
+    }
+}
+
+/// Reads whatever Slack is showing and posts it. Unsent reads are not buffered the way heartbeats
+/// are: an observation is a durable fact the server upserts on `(source, externalId)`, so the next
+/// pass re-reads and re-posts the same rows at no cost, and a missed post loses nothing.
+func postSlack() {
+    guard let observations = slack.read(), !observations.isEmpty else { return }
+    struct Body: Encodable { var observations: [Observation] }
+    // The server caps a batch at 500. A rendered viewport is nowhere near that, so this only ever
+    // guards against a surprise rather than paging through one.
+    let body = Body(observations: Array(observations.prefix(500)))
+    guard let data = try? encoder.encode(body),
+          let (status, _) = client.post("/api/ingest/observations", json: data) else { return }
+    if status == 401 { log("server rejected the token for observations (401)") }
+    else if status >= 400 { log("observations rejected with \(status)") }
 }
 
 /// Held for the process's life so the calendar-change subscription stays alive.
