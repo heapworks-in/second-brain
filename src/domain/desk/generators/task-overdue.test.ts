@@ -116,13 +116,13 @@ describe("taskOverdue grouping", () => {
     // Seven identical cards from one import is what made the desk unanswerable: the real question
     // is whether the programme is still happening, and no per-row card can ask it.
     t = makeTestDb();
-    const c = container("Principal Engineer 52 weeks");
+    const c = container("Staff Engineer 52 weeks");
     const ids = ["2026-11-01", "2026-11-01", "2026-11-03"].map((due, i) => task({ title: `Week ${i + 1}`, dueDate: due, containerId: c.id }).id);
 
     const drafts = taskOverdue(t.db, NOW);
     expect(drafts).toHaveLength(1);
     const [draft] = drafts;
-    expect(draft.title).toBe("3 tasks in Principal Engineer 52 weeks are overdue");
+    expect(draft.title).toBe("3 tasks in Staff Engineer 52 weeks are overdue");
     expect(draft.count).toBe(3);
     expect(draft.sourceRef).toBe(`container:${c.id}:overdue`);
     expect(draft.payload).toMatchObject({ taskIds: ids, containerId: c.id, count: 3 });

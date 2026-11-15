@@ -80,7 +80,7 @@ stalled, not because each of them individually slipped.
 - Overdue tasks sharing a `containerId` group into one draft when there are **two or more**.
 - Tasks with no container never group — there is no cause to name.
 - `sourceRef` becomes `container:<id>:overdue`, stable across sweeps so a dismissal sticks.
-- Title: `7 tasks in Principal Engineer 52 weeks are overdue`.
+- Title: `7 tasks in Staff Engineer 52 weeks are overdue`.
 - Detail: `Oldest due 2026-11-01, 14 days ago. Nothing set aside for any of them today.`
 - Urgency: the oldest member's, unchanged in shape — the group is as urgent as its worst task.
 - Payload: `{ taskIds: number[], containerId, count, days, dueDate }`.

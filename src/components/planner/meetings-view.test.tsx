@@ -220,14 +220,14 @@ describe("MeetingsView", () => {
 
   it("lists an all-day event as a chip with nothing to record or join", async () => {
     stubSettings({ autoRecord: false, autoRecordNeedsCallLink: true });
-    const holiday = meeting({ id: 9, title: "Dussehra", startsAt: `${TODAY}T00:00:00`, endsAt: "2026-09-24T00:00:00", allDay: true, attendees: 0, organizer: "" });
+    const holiday = meeting({ id: 9, title: "Spring holiday", startsAt: `${TODAY}T00:00:00`, endsAt: "2026-09-24T00:00:00", allDay: true, attendees: 0, organizer: "" });
     render(<MeetingsView today={TODAY} meetings={[holiday, MEETINGS[0]]} />);
     const line = screen.getByLabelText("All day");
-    expect(within(line).getByRole("button", { name: "Dussehra" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Record Dussehra" })).toBeNull();
+    expect(within(line).getByRole("button", { name: "Spring holiday" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Record Spring holiday" })).toBeNull();
     expect(screen.getByRole("button", { name: "Record Standup" })).toBeTruthy();
     expect(screen.queryByText("0 attendees")).toBeNull();
-    fireEvent.click(within(line).getByRole("button", { name: "Dussehra" }));
+    fireEvent.click(within(line).getByRole("button", { name: "Spring holiday" }));
     await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/items/42"));
   });
 
