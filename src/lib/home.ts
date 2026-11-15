@@ -6,6 +6,7 @@ import { listBlocks } from "@/domain/blocks";
 import { listContainers } from "@/domain/containers";
 import { countInbox, listItems, parseMeta } from "@/domain/items";
 import { deskPayload } from "@/domain/desk";
+import { collectInsights } from "@/domain/insights";
 import { containerProgress, getTask } from "@/domain/tasks";
 import { focusSummary, runningFocus } from "@/domain/focus";
 import { getReview } from "@/domain/review";
@@ -233,6 +234,12 @@ export function homePayload(db: DB, now: Date): HomeDTO {
       // that `/desk` exists to be instead.
       desk: deskPayload(db, now).open,
     },
+    // Only what is BLOCKED, and only its headline. Home does not become the insights page; it
+    // says the thing you would otherwise never find out, which for most of these is that a
+    // feature has been running against no input since the day it shipped.
+    blocked: collectInsights(db, now)
+      .filter((i) => i.severity === "blocked")
+      .map((i) => ({ id: i.id, headline: i.headline })),
     now: current,
     next,
     projects: projectCards(db, date),

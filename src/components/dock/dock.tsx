@@ -10,6 +10,7 @@ import {
   BookBookmark,
   CalendarCheck,
   ClipboardText,
+  Lightbulb,
   DotsThree,
   Flag,
   House,
@@ -47,6 +48,7 @@ const NARROW = "(max-width: 719px)";
 const ICONS: Record<IconName, Glyph> = {
   home: House,
   desk: ClipboardText,
+  insight: Lightbulb,
   settings: Gear,
   planner: CalendarCheck,
   inbox: Tray,

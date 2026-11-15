@@ -403,6 +403,10 @@ describe("the project pulse", () => {
   // The list edits tasks in place, so a summary built from the render-time snapshot would stop
   // matching the rows beneath it the moment anything was ticked.
   it("follows the list rather than the snapshot it was rendered with", async () => {
+    // Ticking a task PATCHes. Unstubbed, that reaches the real fetch, which cannot parse a
+    // relative URL and rejects after the test has finished -- an unhandled rejection with no
+    // owner, which is what it was.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
     render(
       <ContainerEditor initial={container} items={[]} tasks={tasks([{ title: "Tick me" }, { title: "Leave me" }])} today="2026-09-16" />,
     );

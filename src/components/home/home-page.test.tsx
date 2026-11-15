@@ -30,6 +30,7 @@ function payload(over: Partial<HomeDTO> = {}): HomeDTO {
       capacity: { freeMinutes: 540, plannedMinutes: 60, unestimated: 0, workHours: "09:00-18:00", workingDays: [1, 2, 3, 4, 5], blockedMinutes: 0, unplacedMinutes: 60, drift: null, forecastMinutes: null, leftTodayMinutes: 540 },
     },
     counts: { planned: 1, meetings: 0, inbox: 2, desk: 0 },
+    blocked: [],
     now: null,
     next: [],
     projects: [{ id: 4, name: "Launch", slug: "launch", open: 2, done: 2, nextTask: null, deadline: null, updatedAt: "2026-09-21T09:00:00.000Z" }],

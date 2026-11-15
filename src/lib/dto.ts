@@ -495,6 +495,9 @@ export interface HomeDTO {
   generatedAt: string;
   day: PlannerDayDTO;
   counts: { planned: number; meetings: number; inbox: number; desk: number };
+  /** The insights that mean a capability is not working at all. Named on Home rather than left
+   * on a page of their own, because a page you do not open is how the desk failed. */
+  blocked: { id: string; headline: string }[];
   now: HomeItemDTO | null;
   /** Up to two, in start order, never the one `now` holds. */
   next: HomeItemDTO[];

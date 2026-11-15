@@ -1,4 +1,4 @@
-export type IconName = "home" | "planner" | "inbox" | "goal" | "review" | "log" | "project" | "area" | "resource" | "people" | "activity" | "library" | "archive" | "search" | "capture" | "help" | "desk" | "settings" | "tracker";
+export type IconName = "insight" | "home" | "planner" | "inbox" | "goal" | "review" | "log" | "project" | "area" | "resource" | "people" | "activity" | "library" | "archive" | "search" | "capture" | "help" | "desk" | "settings" | "tracker";
 
 export interface NavItem {
   href: string;
@@ -18,6 +18,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/planner", label: "Planner", shortcut: "g d", icon: "planner", section: "brain" },
   { href: "/goals", label: "Goals", shortcut: "g g", icon: "goal", section: "brain" },
   { href: "/review", label: "Review", shortcut: "g w", icon: "review", section: "brain" },
+  // Beside Review rather than beside the Desk: both are for standing back and looking, where the
+  // desk is for deciding. `g n` for i-N-sights -- `g i` is the Inbox.
+  { href: "/insights", label: "Insights", shortcut: "g n", icon: "insight", section: "brain" },
   { href: "/log", label: "Log", shortcut: "g o", icon: "log", section: "brain" },
   { href: "/inbox", label: "Inbox", shortcut: "g i", icon: "inbox", badge: "inbox", section: "brain" },
   { href: "/projects", label: "Projects", shortcut: "g p", icon: "project", section: "brain" },

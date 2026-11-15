@@ -90,6 +90,7 @@ export function HomePage({ initial }: { initial: HomeDTO }) {
       <TopBand
         day={data.day}
         counts={data.counts}
+        blocked={data.blocked}
         focus={data.focus}
         review={data.review}
         meetingShare={data.meetingShare}

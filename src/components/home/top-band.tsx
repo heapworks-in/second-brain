@@ -28,6 +28,7 @@ function figures(counts: HomeDTO["counts"]): { href: string; label: string }[] {
 interface Props {
   day: PlannerDayDTO;
   counts: HomeDTO["counts"];
+  blocked: HomeDTO["blocked"];
   focus: HomeDTO["focus"];
   review: HomeDTO["review"];
   meetingShare: HomeDTO["meetingShare"];
@@ -56,7 +57,7 @@ function hasWeekLine(meetingShare: HomeDTO["meetingShare"], stalledGoals: HomeDT
  * week has a review it renders nothing at all, not even a tick, because this is a nudge and the
  * research behind it is explicit that the nagging version is the one people turn off.
  */
-export function TopBand({ day, counts, focus, review, meetingShare, stalledGoals, duePredictions, onHours, onWorkingDays }: Props) {
+export function TopBand({ day, counts, blocked, focus, review, meetingShare, stalledGoals, duePredictions, onHours, onWorkingDays }: Props) {
   return (
     <header className="flex flex-col gap-2">
       <DateHeader
@@ -77,6 +78,22 @@ export function TopBand({ day, counts, focus, review, meetingShare, stalledGoals
         {/* What the day has cost so far — nowhere of its own to lead to yet, so it is read, not linked. */}
         <li>{focus.minutes === 0 ? "Nothing focused yet" : `${formatDuration(focus.minutes * 60_000)} focused`}</li>
       </ul>
+      {/* Named, not counted. "2 things are not working" would be a badge you learn to ignore,
+        * and these are the lines that explain why a whole feature has produced nothing since the
+        * day it shipped -- the calendar holding only holidays, a permission never granted. Home
+        * is where they go because the alternative is a page nobody opens, which is how the desk
+        * went 810 sweeps without being answered. */}
+      {blocked.length > 0 && (
+        <ul className="list-none m-0 p-0 flex flex-col gap-0.5 text-[12.5px] text-danger">
+          {blocked.map((b) => (
+            <li key={b.id}>
+              <Link href="/insights" className="focus-ring rounded-sm hover:underline">
+                {b.headline}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
       {hasWeekLine(meetingShare, stalledGoals, review, duePredictions) && (
         <ul className="list-none m-0 p-0 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-fg-faint">
           {/* This week's meeting load, the audit's own figure — reused, not re-derived, so the

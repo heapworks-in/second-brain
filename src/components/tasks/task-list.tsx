@@ -151,8 +151,14 @@ export function TaskList({ containerId, initialTasks, onProgress, onTasks, today
     void (async () => {
       const res = await fetch(`/api/plan?date=${today}`, { cache: "no-store" }).catch(() => null);
       if (!res?.ok) return;
-      const body = (await res.json()) as { tasks: { id: number }[] };
-      setPlannedIds(new Set(body.tasks.map((t) => t.id)));
+      // Everything after the fetch is guarded too. The `.catch` above only covers the request;
+      // a body that is not JSON, or is JSON without `tasks`, threw an unhandled rejection that
+      // no caller could see -- which is what seven of them in the suite turned out to be. A
+      // plan that cannot be read should leave the highlights alone, not take the page down.
+      const body = await res.json().catch(() => null);
+      const planned: unknown = (body as { tasks?: unknown } | null)?.tasks;
+      if (!Array.isArray(planned)) return;
+      setPlannedIds(new Set(planned.map((t) => (t as { id: number }).id)));
     })();
   }, [today]);
 

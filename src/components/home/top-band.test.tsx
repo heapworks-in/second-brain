@@ -31,11 +31,13 @@ function band(
   meetingShare: HomeDTO["meetingShare"] = NO_MEETING_LOAD,
   stalledGoals: HomeDTO["stalledGoals"] = [],
   duePredictions: HomeDTO["duePredictions"] = 0,
+  blocked: HomeDTO["blocked"] = [],
 ) {
   render(
     <TopBand
       day={day()}
       counts={{ ...counts, desk: counts.desk ?? 0 }}
+      blocked={blocked}
       focus={focus}
       review={review}
       meetingShare={meetingShare}
@@ -175,5 +177,21 @@ describe("the desk", () => {
   it("never shows the cards themselves: Home points at the desk, it is not the desk", () => {
     band({ planned: 0, meetings: 0, inbox: 0, desk: 2 });
     expect(screen.queryByRole("button", { name: /Reaffirm|Re-estimate|File it/ })).toBeNull();
+  });
+});
+
+describe("TopBand and what is not working", () => {
+  it("names a blocked capability rather than counting them", () => {
+    // "2 things are not working" is a badge you learn to ignore. These are the lines that explain
+    // why a whole feature has produced nothing since it shipped, so Home says which.
+    band({ planned: 1, meetings: 0, inbox: 0 }, undefined, undefined, undefined, undefined, undefined, [
+      { id: "capture:no-accessibility", headline: "Accessibility is not granted, so nothing is being captured" },
+    ]);
+    expect(screen.getByRole("link", { name: /Accessibility is not granted/ }).getAttribute("href")).toBe("/insights");
+  });
+
+  it("says nothing at all when nothing is blocked", () => {
+    band({ planned: 1, meetings: 0, inbox: 0 });
+    expect(screen.queryByRole("link", { name: /not granted/ })).toBeNull();
   });
 });
