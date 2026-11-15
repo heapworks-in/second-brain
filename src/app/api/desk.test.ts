@@ -68,11 +68,10 @@ describe("GET /api/desk", () => {
     expect(body.proposals[0]).not.toHaveProperty("payload");
   });
 
-  /** The cap is a deliberate limit, so the page is told the real number too: seven of nineteen
-   * without saying nineteen would be hiding its own arithmetic. */
-  it("shows at most seven, and still reports how many are really waiting", async () => {
-    // Spread across kinds, because that is what the overall cap was written for. Eleven of ONE
-    // kind is the other case, and the per-kind cap holds it to two -- see below.
+  /** Everything open comes back. The desk used to return seven of however many and show one at a
+   *  time; in 810 sweeps nothing was ever decided, because a page that hides most of itself gives
+   *  you no reason to open it. */
+  it("returns every open decision, best first", async () => {
     const kinds = ["capture_unfiled", "task_stalled", "task_overrun", "decision_stale", "prediction_due", "commitment_owed"] as const;
     const drafts: ProposalDraft[] = Array.from({ length: 11 }, (_, i) => ({
       kind: kinds[i % kinds.length],
@@ -85,30 +84,49 @@ describe("GET /api/desk", () => {
     }));
     reconcileProposals(getDb(), drafts, NOW);
     const body = await (await r.desk.GET()).json();
-    expect(body.proposals).toHaveLength(7);
+    expect(body.proposals).toHaveLength(11);
     expect(body.open).toBe(11);
-    // Best first, by rank rather than by the order they were filed.
     const ranks = body.proposals.map((p: { rank: number }) => p.rank);
     expect([...ranks].sort((a: number, b: number) => b - a)).toEqual(ranks);
   });
 
-  it("will not let one kind take the whole desk", async () => {
-    // Eleven of one kind is what actually happened: eight overdue tasks took all seven slots and
-    // left two other kinds open and permanently unseen.
-    const drafts: ProposalDraft[] = Array.from({ length: 11 }, (_, i) => ({
-      kind: "capture_unfiled" as const,
-      source: "item",
-      sourceRef: `item:${i}`,
-      title: `Card ${i}`,
-      detail: "",
-      payload: {},
-      urgency: (11 - i) / 11,
-    }));
+  it("does not hide a kind behind a noisier one", async () => {
+    // Eight overdue rows once took all seven slots while two other kinds sat open and invisible.
+    const drafts: ProposalDraft[] = [
+      ...Array.from({ length: 8 }, (_, i) => ({
+        kind: "capture_unfiled" as const,
+        source: "item" as const,
+        sourceRef: `item:${i}`,
+        title: `Noise ${i}`,
+        detail: "",
+        payload: {},
+        urgency: 1,
+      })),
+      { kind: "task_stalled" as const, source: "task" as const, sourceRef: "task:1", title: "Quiet one", detail: "", payload: {}, urgency: 0.05 },
+    ];
     reconcileProposals(getDb(), drafts, NOW);
     const body = await (await r.desk.GET()).json();
-    expect(body.proposals).toHaveLength(2);
-    // Hidden, not dropped: they surface as the ones in front of them are answered.
-    expect(body.open).toBe(11);
+    expect(body.proposals.map((p: { title: string }) => p.title)).toContain("Quiet one");
+  });
+
+  it("carries what each card is about, so a row can be checked rather than trusted", async () => {
+    const container = getDb()
+      .insert(containers)
+      .values({ kind: "project", name: "Atlas", slug: "atlas", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() })
+      .returning()
+      .get();
+    const task = getDb()
+      .insert(tasks)
+      .values({ title: "Late thing", dueDate: "2026-11-01", containerId: container.id, createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() })
+      .returning()
+      .get();
+    reconcileProposals(
+      getDb(),
+      [{ kind: "task_overdue" as const, source: "task" as const, sourceRef: `task:${task.id}`, title: "Late thing", detail: "", payload: { taskId: task.id }, urgency: 0.5 }],
+      NOW,
+    );
+    const body = await (await r.desk.GET()).json();
+    expect(body.proposals[0].origin).toEqual({ label: "Atlas", href: "/c/atlas" });
   });
 });
 

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { proposals } from "@/db/schema";
 import { reconcileProposals, openProposals } from "./reconcile";
-import { OPEN_CAP, PER_KIND_CAP } from "./rank";
+import { BOARD_CEILING } from "./rank";
 import type { ProposalDraft } from "./types";
 
 let t: TestDb;
@@ -134,45 +134,42 @@ describe("reconcileProposals", () => {
   });
 });
 
-describe("openProposals and one noisy kind", () => {
+describe("openProposals shows the whole picture", () => {
   function draft(kind: ProposalDraft["kind"], ref: string, urgency: number): ProposalDraft {
     return { kind, source: "task", sourceRef: ref, title: ref, detail: "", payload: {}, urgency };
   }
 
-  it("stops one kind taking every slot, and keeps the others visible", () => {
-    // Eight task_overdue rows took all seven slots on the real desk, leaving two other kinds open
-    // and permanently unseen. The overall cap was designed against a queue that grows; this is a
-    // queue that gets monopolised, which looks identical from the outside.
-    t = makeTestDb();
-    const flood = Array.from({ length: 8 }, (_, i) => draft("task_overdue", `task:${i}`, 1));
-    reconcileProposals(t.db, [...flood, draft("task_stalled", "task:99", 0.2), draft("commitment_unbooked", "item:1", 0.15)], NOW);
-
-    const shown = openProposals(t.db, OPEN_CAP);
-    const kinds = shown.map((p) => p.kind);
-    expect(kinds.filter((k) => k === "task_overdue")).toHaveLength(PER_KIND_CAP);
-    expect(kinds).toContain("task_stalled");
-    expect(kinds).toContain("commitment_unbooked");
-  });
-
-  it("hides the rest rather than dropping them, and still counts them", () => {
+  it("returns everything open, not a window onto it", () => {
+    // The desk used to show seven of however many, one at a time. Nothing was ever decided in
+    // 810 sweeps: a page that hides most of itself gives you no reason to open it.
     t = makeTestDb();
     reconcileProposals(
       t.db,
-      Array.from({ length: 6 }, (_, i) => draft("task_overdue", `task:${i}`, 1)),
+      Array.from({ length: 11 }, (_, i) => draft("capture_unfiled", `item:${i}`, (11 - i) / 11)),
       NOW,
     );
-    expect(openProposals(t.db, OPEN_CAP)).toHaveLength(PER_KIND_CAP);
-    // Every one is still open and will surface as those in front are answered.
-    expect(t.db.select().from(proposals).where(eq(proposals.state, "open")).all()).toHaveLength(6);
+    expect(openProposals(t.db, BOARD_CEILING)).toHaveLength(11);
   });
 
-  it("keeps the best of a kind, not an arbitrary two", () => {
+  it("orders by rank, best first", () => {
     t = makeTestDb();
     reconcileProposals(
       t.db,
-      [draft("task_overdue", "task:low", 0.1), draft("task_overdue", "task:high", 1), draft("task_overdue", "task:mid", 0.5)],
+      [draft("capture_unfiled", "item:low", 0.1), draft("capture_unfiled", "item:high", 1), draft("capture_unfiled", "item:mid", 0.5)],
       NOW,
     );
-    expect(openProposals(t.db, OPEN_CAP).map((p) => p.sourceRef)).toEqual(["task:high", "task:mid"]);
+    expect(openProposals(t.db, BOARD_CEILING).map((p) => p.sourceRef)).toEqual(["item:high", "item:mid", "item:low"]);
+  });
+
+  it("stops at the ceiling, which is a backstop and not a feature", () => {
+    t = makeTestDb();
+    reconcileProposals(
+      t.db,
+      Array.from({ length: 8 }, (_, i) => draft("capture_unfiled", `item:${i}`, (8 - i) / 8)),
+      NOW,
+    );
+    expect(openProposals(t.db, 3)).toHaveLength(3);
+    // Hidden by the ceiling, never dropped.
+    expect(t.db.select().from(proposals).where(eq(proposals.state, "open")).all()).toHaveLength(8);
   });
 });

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Clock, RefreshCw, X } from "lucide-react";
+import { ArrowUpRight, Check, Clock, RefreshCw, X } from "lucide-react";
 import type { DeskDTO, ProposalDTO } from "@/lib/dto";
 import { Button } from "../ui";
-import { PRIMARY_LABELS, dismissNote } from "./answers";
+import { PRIMARY_LABELS, dismissNote, groupIntoSections } from "./answers";
 
 /** How long the line offering to take an answer back stays on screen. */
 const UNDO_MS = 8000;
@@ -18,38 +19,21 @@ interface Answered {
 }
 
 /**
- * What is behind the card, and nothing more: a count and a dot per waiting proposal.
+ * The desk: everything open, grouped by the kind of attention it needs, each row carrying what it
+ * is about and where to go and look at it.
  *
- * Visible but not workable, deliberately. Knowing six are left is what makes clearing the desk
- * feel finite; being able to pick among the six is what turns a decision queue back into a list
- * you shop in, which is the failure this whole page is shaped against.
- */
-function Rail({ position, total }: { position: number; total: number }) {
-  return (
-    <div className="flex items-center gap-2" role="img" aria-label={`${position} of ${total} on the desk`}>
-      <span className="font-mono tabular-nums text-[11.5px] text-fg-faint">
-        {position} / {total}
-      </span>
-      <span className="flex items-center gap-1" aria-hidden>
-        {Array.from({ length: Math.min(total, 7) }, (_, i) => (
-          <span key={i} className={`w-1.5 h-1.5 rounded-full ${i < position ? "bg-violet-bright" : "bg-hairline"}`} />
-        ))}
-      </span>
-    </div>
-  );
-}
-
-/**
- * The desk: one decision at a time, with its evidence on it.
+ * This replaces one-card-at-a-time, which was argued for on the grounds that "a queue you can scan
+ * is a queue you can defer" and lost on the evidence: across 810 sweeps nothing was ever decided.
+ * Hiding nine of ten things gives you no reason to open the page, and a page you do not open
+ * cannot be answered. Seeing the whole picture is what makes it worth opening; the sections and
+ * the grouped rows are what keep it short enough to read.
  *
- * Not a list of seven. A list lets you take the three easy ones and leave the one that mattered,
- * and a queue you can scan is a queue you can defer. So the top-ranked proposal gets the whole
- * column, answering it brings up the next, and the rail behind it is the only acknowledgement
- * that there are others.
+ * Tabs were the obvious alternative and were rejected for the same reason the board exists: a tab
+ * is a thing you do not look at.
  *
- * Every answer commits at once and leaves an undo line for eight seconds. A confirm step on a
- * queue of seven would cost fourteen decisions instead of seven, and undo is the honest
- * affordance anyway: the commit has happened, and the only question left is whether it stays.
+ * The fast path survives. j and k move, Enter, . and N answer the focused row, so the list can be
+ * worked top to bottom without touching the mouse -- which is what one-at-a-time was really
+ * protecting, and it never needed the hiding to do it.
  */
 export function DeskPage({ initial }: { initial: DeskDTO }) {
   const router = useRouter();
@@ -57,12 +41,16 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
   const [answered, setAnswered] = useState<Answered | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [focused, setFocused] = useState(0);
   // Counted here rather than read from the server: it is what this sitting has got through, which
   // is the number worth seeing at the end of it.
   const [done, setDone] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const card: ProposalDTO | undefined = desk.proposals[0];
+  const sections = useMemo(() => groupIntoSections(desk.proposals), [desk.proposals]);
+  /** The rows in the order they are drawn, so j and k walk the page rather than the raw ranking. */
+  const ordered = useMemo(() => sections.flatMap((s) => s.cards), [sections]);
+  const focusedCard: ProposalDTO | undefined = ordered[Math.min(focused, ordered.length - 1)];
 
   const settle = useCallback((next: DeskDTO) => {
     setDesk(next);
@@ -72,7 +60,7 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
 
   const answer = useCallback(
-    async (decision: "accept" | "snooze" | "dismiss") => {
+    async (card: ProposalDTO | undefined, decision: "accept" | "snooze" | "dismiss") => {
       if (!card || busy) return;
       setBusy(true);
       setError(null);
@@ -98,7 +86,7 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
         setBusy(false);
       }
     },
-    [card, busy, settle],
+    [busy, settle],
   );
 
   const undo = useCallback(async () => {
@@ -131,7 +119,6 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
     }
   }, [settle]);
 
-  // One key per answer, because they differ per card and `Enter` cannot mean three things.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
@@ -142,87 +129,93 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
         void undo();
         return;
       }
-      if (!card) return;
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocused((i) => Math.min(i + 1, ordered.length - 1));
+        return;
+      }
+      if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocused((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (!focusedCard) return;
+      // One key per answer, because they differ per row and Enter cannot mean three things.
       if (e.key === "Enter" || e.key === "1") {
         e.preventDefault();
-        void answer("accept");
+        void answer(focusedCard, "accept");
       } else if (e.key === "." || e.key === "2") {
         e.preventDefault();
-        void answer("snooze");
+        void answer(focusedCard, "snooze");
       } else if (e.key === "n" || e.key === "3") {
         e.preventDefault();
-        void answer("dismiss");
+        void answer(focusedCard, "dismiss");
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [card, answer, undo, answered]);
+  }, [focusedCard, ordered.length, answer, undo, answered]);
 
-  // The sitting's own arithmetic: what has been answered since this page opened, plus what is
-  // still waiting. Not the server's total — arriving at a desk of six and answering two should
-  // read "3 / 6", not "1 / 4".
-  const total = done + desk.open;
-  const position = Math.min(total, done + 1);
+  const hidden = desk.open - desk.proposals.length;
 
   return (
-    // Centred horizontally and given room to breathe. Pinned to the top-LEFT of an empty column
-    // it read as an afterthought, which is a fair description of how much it got used.
-    //
-    // Not centred vertically, though it was tried: on a tall window that leaves as much emptiness
-    // above the card as below it, which looks more broken than sitting near the top, and it stops
-    // matching every other page in the app. The space under one card is honest -- there is one
-    // decision -- and the fix for the app-wide emptiness is not the desk's to make.
-    <div className="flex flex-col gap-4 w-full max-w-[46rem] mx-auto px-1 pt-2 sm:pt-6">
+    <div className="flex flex-col gap-5 w-full max-w-[52rem] mx-auto px-1 pt-2 sm:pt-5">
       <header className="flex items-center gap-3">
-        {total > 0 && <Rail position={position} total={total} />}
+        <span className="font-mono tabular-nums text-[11.5px] text-fg-faint">
+          {desk.open} {desk.open === 1 ? "decision" : "decisions"}
+          {done > 0 && ` · ${done} answered`}
+        </span>
         <span className="flex-1" />
+        {/* The keys were `⏎ · . · n`, in which the snooze key IS a period and the separators were
+            middle dots -- the same character doing two jobs, at 11px in the faintest grey. */}
+        <span className="hidden sm:flex items-center gap-1.5 text-[11px] text-fg-faint" aria-hidden>
+          {[
+            { key: "j", what: "move" },
+            { key: "Enter", what: "yes" },
+            { key: ".", what: "later" },
+            { key: "N", what: "never" },
+          ].map(({ key, what }) => (
+            <span key={key} className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded border border-hairline bg-layer-2 font-mono text-[10.5px] text-fg-muted">{key}</kbd>
+              {what}
+            </span>
+          ))}
+        </span>
         <Button size="sm" variant="ghost" icon={RefreshCw} disabled={busy} onClick={() => void refresh()}>
           Refresh
         </Button>
       </header>
 
-      {card ? (
-        <section className="pane p-5 sm:p-6 flex flex-col gap-4" aria-label="The decision on the desk">
-          <div className="flex flex-col gap-1">
-            <h2 className="m-0 text-[17px] font-medium leading-snug text-balance">{card.title}</h2>
-            <p className="m-0 text-[13px] text-fg-muted">{card.detail}</p>
-            {dismissNote(card.dismissRate) && <p className="m-0 text-[11.5px] text-fg-faint">{dismissNote(card.dismissRate)}</p>}
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" variant="primary" icon={Check} disabled={busy} onClick={() => void answer("accept")}>
-              {PRIMARY_LABELS[card.kind](card.count)}
-            </Button>
-            <Button size="sm" variant="ghost" icon={Clock} disabled={busy} onClick={() => void answer("snooze")}>
-              Not now
-            </Button>
-            <Button size="sm" variant="ghost" icon={X} disabled={busy} onClick={() => void answer("dismiss")}>
-              Never
-            </Button>
-            <span className="flex-1" />
-            {/* The keys were `⏎ · . · n`, in which the snooze key IS a period and the separators
-                are middle dots -- the same character doing two jobs, at 11px in the faintest
-                grey. Named, spaced, and boxed so a key looks like a key. */}
-            <span className="hidden sm:flex items-center gap-1.5 text-[11px] text-fg-faint" aria-hidden>
-              {[
-                { key: "Enter", what: "yes" },
-                { key: ".", what: "later" },
-                { key: "N", what: "never" },
-              ].map(({ key, what }) => (
-                <span key={key} className="flex items-center gap-1">
-                  <kbd className="px-1.5 py-0.5 rounded border border-hairline bg-layer-2 font-mono text-[10.5px] text-fg-muted">{key}</kbd>
-                  {what}
-                </span>
-              ))}
-            </span>
-          </div>
-        </section>
-      ) : (
+      {ordered.length === 0 ? (
         // Two empty states, because they say different things: one is the end of a sitting and
         // carries what it was worth, the other is simply a quiet morning.
         <p className="m-0 text-[13px] text-fg-muted">
           {done > 0 ? `Desk clear — ${done} ${done === 1 ? "decision" : "decisions"} made.` : "Desk clear."}
         </p>
+      ) : (
+        sections.map((section) => (
+          <section key={section.id} className="flex flex-col gap-2" aria-label={section.title}>
+            <div className="flex items-baseline gap-2">
+              <h2 className="m-0 micro">{section.title}</h2>
+              <span className="font-mono tabular-nums text-[11px] text-fg-faint">{section.cards.length}</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {section.cards.map((card) => (
+                <Row
+                  key={card.id}
+                  card={card}
+                  busy={busy}
+                  focused={focusedCard?.id === card.id}
+                  onFocus={() => setFocused(ordered.findIndex((c) => c.id === card.id))}
+                  onAnswer={(decision) => void answer(card, decision)}
+                />
+              ))}
+            </div>
+          </section>
+        ))
       )}
+
+      {hidden > 0 && <p className="m-0 text-[12px] text-fg-faint">{hidden} more waiting, held back so this page stays readable.</p>}
 
       {answered && (
         <p className="m-0 flex items-center gap-2 text-[12.5px] text-fg-muted" role="status">
@@ -241,6 +234,82 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
       )}
 
       {error && <p className="m-0 text-[12.5px] text-danger">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * One decision, with its evidence and its source on it.
+ *
+ * The source is the part the single card never had. A sentence you cannot check is one you either
+ * take on trust or ignore, and ignoring is cheaper -- so every row names the thing it is about and
+ * links to it wherever there is somewhere to go.
+ */
+function Row({
+  card,
+  busy,
+  focused,
+  onFocus,
+  onAnswer,
+}: {
+  card: ProposalDTO;
+  busy: boolean;
+  focused: boolean;
+  onFocus: () => void;
+  onAnswer: (decision: "accept" | "snooze" | "dismiss") => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const note = dismissNote(card.dismissRate);
+
+  useEffect(() => {
+    // Optional-called: jsdom has no scrollIntoView, and a keyboard nicety must never be the thing
+    // that stops the page rendering.
+    if (focused) ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [focused]);
+
+  return (
+    <div
+      ref={ref}
+      onMouseEnter={onFocus}
+      className={`pane px-3.5 py-3 flex flex-col gap-2.5 transition-colors ${focused ? "border-violet-bright/40 bg-layer-2" : ""}`}
+    >
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h3 className="m-0 text-[14px] font-medium leading-snug text-balance min-w-0">{card.title}</h3>
+          {card.count > 1 && (
+            <span className="shrink-0 font-mono tabular-nums text-[11px] text-fg-faint" aria-label={`${card.count} items`}>
+              ×{card.count}
+            </span>
+          )}
+        </div>
+        <p className="m-0 text-[12.5px] text-fg-muted">{card.detail}</p>
+        {note && <p className="m-0 text-[11.5px] text-fg-faint">{note}</p>}
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="primary" icon={Check} disabled={busy} onClick={() => onAnswer("accept")}>
+          {PRIMARY_LABELS[card.kind](card.count)}
+        </Button>
+        <Button size="sm" variant="ghost" icon={Clock} disabled={busy} onClick={() => onAnswer("snooze")}>
+          Not now
+        </Button>
+        <Button size="sm" variant="ghost" icon={X} disabled={busy} onClick={() => onAnswer("dismiss")}>
+          Never
+        </Button>
+        <span className="flex-1" />
+        {card.origin &&
+          (card.origin.href ? (
+            <Link
+              href={card.origin.href}
+              className="focus-ring rounded-sm flex items-center gap-1 text-[11.5px] text-fg-faint hover:text-fg max-w-[14rem]"
+            >
+              <span className="truncate">{card.origin.label}</span>
+              <ArrowUpRight className="w-3 h-3 shrink-0" aria-hidden />
+            </Link>
+          ) : (
+            <span className="text-[11.5px] text-fg-faint max-w-[14rem] truncate">{card.origin.label}</span>
+          ))}
+      </div>
     </div>
   );
 }

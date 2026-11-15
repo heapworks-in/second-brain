@@ -5,23 +5,19 @@ import type { ProposalKind } from "@/db/enums";
 import { getSetting } from "@/domain/settings";
 import type { ProposalDraft } from "./types";
 
-/** How many open proposals the desk will ever show. The cap is the feature: a queue that can
- * grow is a queue you stop looking at, and clearing seven is possible. */
-export const OPEN_CAP = 7;
-
 /**
- * At most this many of any one kind among those seven.
+ * The most rows the board will render, and not a cap in the old sense.
  *
- * The overall cap was designed against a queue that grows. What actually happened is a queue that
- * gets monopolised, which looks the same from the outside -- you stop seeing it either way. One
- * programme import put eight `task_overdue` rows on the desk, which took all seven slots and left
- * `task_stalled` and `commitment_unbooked` open and invisible behind them.
+ * The desk showed seven, one at a time, on the argument that "a queue you can scan is a queue you
+ * can defer". The argument lost: in 810 sweeps nothing was ever decided, because a page that hides
+ nine of ten things gives you no reason to open it, and a page you do not open cannot be answered.
+ * Seeing the whole picture is what makes it worth opening; grouping is what keeps it short.
  *
- * Two, not one: a kind with a real cluster deserves more than a single voice, and five slots still
- * remain for everything else. Nothing is dropped -- the rest stay open and surface as the ones in
- * front of them are answered.
+ * This number exists only so one runaway generator cannot render ten thousand rows. The real
+ * limits are upstream and better placed: ASK_CAP holds a Slack backfill to twenty, and
+ * `task_overdue` collapses a container's worth into one row.
  */
-export const PER_KIND_CAP = 2;
+export const BOARD_CEILING = 50;
 
 /** Decisions of one kind the dismiss rate is measured over. Short enough to follow a change of
  * mind within a fortnight's use, long enough that two impatient dismissals do not bury a kind. */

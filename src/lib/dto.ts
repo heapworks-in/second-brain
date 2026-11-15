@@ -744,6 +744,9 @@ export interface ProposalDTO {
   /** How many things this card answers for, so the button can name the number it is about to
    * act on. One unless the generator grouped. */
   count: number;
+  /** What the card is about, and where to go and look at it. Null when the kind has nothing
+   * worth naming. */
+  origin: { label: string; href: string | null } | null;
 }
 
 export interface DeskDTO {

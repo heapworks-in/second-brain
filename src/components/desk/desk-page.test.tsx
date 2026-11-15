@@ -21,6 +21,7 @@ function card(over: Partial<ProposalDTO> = {}): ProposalDTO {
     rank: 0.8,
     createdAt: "2026-11-08T09:00:00.000Z",
     count: 1,
+    origin: null,
     dismissRate: 0,
     ...over,
   };
@@ -60,21 +61,46 @@ describe("DeskPage", () => {
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
   });
 
-  /** One at a time is the whole design: a second card must not be on screen to be shopped for. */
-  it("shows only the first of several, and says how many there are", () => {
+  /** Everything open is on the page. Hiding all but one is what the board replaced: across 810
+   *  sweeps of a one-at-a-time desk, nothing was ever decided. */
+  it("shows every open decision, not just the first", () => {
     render(<DeskPage initial={desk({ proposals: [card(), card({ id: 2, title: "Answer the auditors" })], open: 2 })} />);
     expect(screen.getByRole("heading", { name: "Write the migration" })).toBeTruthy();
-    expect(screen.queryByText("Answer the auditors")).toBeNull();
-    expect(screen.getByRole("img", { name: "1 of 2 on the desk" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Answer the auditors" })).toBeTruthy();
+    expect(screen.getByText(/2 decisions/)).toBeTruthy();
   });
 
-  it("advances to the next card on one round trip, and counts the sitting", async () => {
-    stubDesk(desk({ proposals: [card({ id: 2, title: "Answer the auditors" })], open: 1 }));
-    render(<DeskPage initial={desk({ proposals: [card(), card({ id: 2, title: "Answer the auditors" })], open: 2 })} />);
+  it("groups by the kind of attention a thing needs", () => {
+    render(
+      <DeskPage
+        initial={desk({
+          proposals: [card(), card({ id: 2, kind: "commitment_owed", title: "Unblock Priya" })],
+          open: 2,
+        })}
+      />,
+    );
+    expect(screen.getByRole("region", { name: "Someone is waiting on you" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "The plan disagrees with reality" })).toBeTruthy();
+    // A heading with nothing under it is a heading you learn to skip.
+    expect(screen.queryByRole("region", { name: "Loose ends" })).toBeNull();
+  });
+
+  it("names what a row is about and links to it", () => {
+    render(<DeskPage initial={desk({ proposals: [card({ origin: { label: "Atlas", href: "/c/atlas" } })], open: 1 })} />);
+    expect(screen.getByRole("link", { name: /Atlas/ }).getAttribute("href")).toBe("/c/atlas");
+  });
+
+  it("takes the answered row off the board and counts the sitting", async () => {
+    // Two different kinds, so each row's button names its own consequence -- which is the point
+    // of the labels, and on a board it is also what keeps them tellable apart.
+    const other = card({ id: 2, kind: "commitment_owed", title: "Unblock Priya" });
+    stubDesk(desk({ proposals: [other], open: 1 }));
+    render(<DeskPage initial={desk({ proposals: [card(), other], open: 2 })} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Re-estimate" }));
-    expect(await screen.findByRole("heading", { name: "Answer the auditors" })).toBeTruthy();
-    expect(screen.getByRole("img", { name: "2 of 2 on the desk" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Write the migration" })).toBeNull());
+    expect(screen.getByRole("heading", { name: "Unblock Priya" })).toBeTruthy();
+    expect(screen.getByText(/1 answered/)).toBeTruthy();
   });
 
   it("offers to take an acceptance back rather than asking first", async () => {

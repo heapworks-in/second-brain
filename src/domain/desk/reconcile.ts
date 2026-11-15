@@ -1,7 +1,7 @@
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { proposals } from "@/db/schema";
-import { dismissRates, PER_KIND_CAP, rankDraft } from "./rank";
+import { dismissRates, rankDraft } from "./rank";
 import type { ProposalDraft } from "./types";
 
 export interface ReconcileResult {
@@ -107,15 +107,6 @@ export function reconcileProposals(db: DB, drafts: ProposalDraft[], now: Date): 
   return result;
 }
 
-/**
- * What the desk shows: open, best first, capped overall and per kind. Both caps are applied here
- * rather than in the page, so every surface that asks agrees on what "on the desk" means.
- *
- * The per-kind cap is taken in JS rather than SQL deliberately. Doing it in SQL needs a window
- * function over a table this small, and the ordering has to be applied before either cap anyway --
- * so the query stays the one readable statement it was, and the two caps sit next to each other
- * where the reason for both can be read at once.
- */
 /** `count` lives in payload rather than a column of its own -- payload is already JSON, already
  *  written on every sweep, and already parsed when accepting. One is never stored: absent means
  *  one, so every existing row keeps reading correctly. */
@@ -123,22 +114,15 @@ function payloadWithCount(draft: ProposalDraft): Record<string, unknown> {
   return (draft.count ?? 1) > 1 ? { ...draft.payload, count: draft.count } : draft.payload;
 }
 
-export function openProposals(db: DB, limit: number, perKind = PER_KIND_CAP) {
-  const ordered = db
+/** What the desk shows: every open proposal, best first, up to a ceiling that exists only so a
+ *  runaway generator cannot render forever. Applied here rather than in the page, so every
+ *  surface that asks agrees on what "on the desk" means. */
+export function openProposals(db: DB, limit: number) {
+  return db
     .select()
     .from(proposals)
     .where(eq(proposals.state, "open"))
     .orderBy(sql`${proposals.rank} desc, ${proposals.createdAt} asc`)
+    .limit(limit)
     .all();
-
-  const taken = new Map<string, number>();
-  const out: typeof ordered = [];
-  for (const row of ordered) {
-    if (out.length >= limit) break;
-    const n = taken.get(row.kind) ?? 0;
-    if (n >= perKind) continue;
-    taken.set(row.kind, n + 1);
-    out.push(row);
-  }
-  return out;
 }

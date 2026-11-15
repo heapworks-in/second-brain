@@ -133,3 +133,35 @@ Three defects, all in `desk-page.tsx`:
   double-added nor removed by the undo.
 - Label: singular and plural read correctly.
 - The existing single-task behaviour keeps its tests unchanged.
+
+---
+
+## Revision, same day: the queue becomes a board
+
+§3 capped a kind to two of seven and §5 kept one card on screen. Both are withdrawn. Shown the
+grouped version, the reaction was immediate and correct: *"it only shows one at a time. why not all
+in some categorisation... give you a whole picture and source."*
+
+The original argument was that "a queue you can scan is a queue you can defer". It is a real risk
+and it lost to a larger one: a page that hides nine of ten things gives you no reason to open it,
+and a page you do not open cannot be answered. Zero decisions in 810 sweeps is that argument
+settled by measurement rather than taste.
+
+- **Everything open is on the page.** `BOARD_CEILING` (50) replaces `OPEN_CAP` and `PER_KIND_CAP`;
+  it is a backstop against a runaway generator, not a feature. The real limits stay upstream where
+  they belong — `ASK_CAP` holds a Slack backfill to twenty, and grouping collapses a container's
+  worth of overdue tasks into one row.
+- **Grouped by the attention a thing needs**, not by generator: *Someone is waiting on you*,
+  *Happening soon*, *Past its date*, *The plan disagrees with reality*, *Loose ends*. Empty
+  headings are not drawn. A test asserts every `ProposalKind` has exactly one home, so a new
+  generator cannot file proposals that render nowhere.
+- **Tabs were considered and rejected.** A tab is a thing you do not look at, which is the failure
+  being fixed.
+- **Every row names what it is about and links to it** (`origin`, resolved server-side from the
+  payload). A sentence you cannot check is one you either take on trust or ignore, and ignoring is
+  cheaper. This is the part the single card never had.
+- **The fast path survives**: `j`/`k` move, `Enter`/`.`/`N` answer the focused row. That is what
+  one-at-a-time was really protecting, and it never needed the hiding to work.
+
+What carries over unchanged: grouping `task_overdue` by container, `count` and the labels that name
+it, the ranker, and the dismissal learning.
