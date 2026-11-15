@@ -165,7 +165,14 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
   const position = Math.min(total, done + 1);
 
   return (
-    <div className="flex flex-col gap-3 max-w-[46rem]">
+    // Centred horizontally and given room to breathe. Pinned to the top-LEFT of an empty column
+    // it read as an afterthought, which is a fair description of how much it got used.
+    //
+    // Not centred vertically, though it was tried: on a tall window that leaves as much emptiness
+    // above the card as below it, which looks more broken than sitting near the top, and it stops
+    // matching every other page in the app. The space under one card is honest -- there is one
+    // decision -- and the fix for the app-wide emptiness is not the desk's to make.
+    <div className="flex flex-col gap-4 w-full max-w-[46rem] mx-auto px-1 pt-2 sm:pt-6">
       <header className="flex items-center gap-3">
         {total > 0 && <Rail position={position} total={total} />}
         <span className="flex-1" />
@@ -175,15 +182,15 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
       </header>
 
       {card ? (
-        <section className="pane p-4 flex flex-col gap-3" aria-label="The decision on the desk">
+        <section className="pane p-5 sm:p-6 flex flex-col gap-4" aria-label="The decision on the desk">
           <div className="flex flex-col gap-1">
-            <h2 className="m-0 text-[15px] font-medium leading-snug">{card.title}</h2>
-            <p className="m-0 text-[12.5px] text-fg-muted">{card.detail}</p>
+            <h2 className="m-0 text-[17px] font-medium leading-snug text-balance">{card.title}</h2>
+            <p className="m-0 text-[13px] text-fg-muted">{card.detail}</p>
             {dismissNote(card.dismissRate) && <p className="m-0 text-[11.5px] text-fg-faint">{dismissNote(card.dismissRate)}</p>}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="primary" icon={Check} disabled={busy} onClick={() => void answer("accept")}>
-              {PRIMARY_LABELS[card.kind]}
+              {PRIMARY_LABELS[card.kind](card.count)}
             </Button>
             <Button size="sm" variant="ghost" icon={Clock} disabled={busy} onClick={() => void answer("snooze")}>
               Not now
@@ -192,8 +199,20 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
               Never
             </Button>
             <span className="flex-1" />
-            <span className="text-[11px] text-fg-faint font-mono" aria-hidden>
-              ⏎ · . · n
+            {/* The keys were `⏎ · . · n`, in which the snooze key IS a period and the separators
+                are middle dots -- the same character doing two jobs, at 11px in the faintest
+                grey. Named, spaced, and boxed so a key looks like a key. */}
+            <span className="hidden sm:flex items-center gap-1.5 text-[11px] text-fg-faint" aria-hidden>
+              {[
+                { key: "Enter", what: "yes" },
+                { key: ".", what: "later" },
+                { key: "N", what: "never" },
+              ].map(({ key, what }) => (
+                <span key={key} className="flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded border border-hairline bg-layer-2 font-mono text-[10.5px] text-fg-muted">{key}</kbd>
+                  {what}
+                </span>
+              ))}
             </span>
           </div>
         </section>

@@ -48,21 +48,30 @@ function payloadOf<T>(proposal: Proposal): T {
  * conditional rather than an unconditional remove that would throw away a plan entry the person
  * had put there themselves.
  */
-function planForToday(db: DB, taskId: number, now: Date, label: (already: boolean) => string) {
+function planForToday(db: DB, taskIds: number[], now: Date, label: (added: number) => string) {
   const today = localDay(now.toISOString());
-  const task = getTask(db, taskId);
-  if (!task) throw new DeskError("That task is no longer there", 404);
-  const already = db
-    .select({ id: dailyPlanEntries.id })
-    .from(dailyPlanEntries)
-    .where(and(eq(dailyPlanEntries.taskId, taskId), eq(dailyPlanEntries.date, today)))
-    .get();
-  if (!already) addToPlan(db, today, taskId);
+  const present = taskIds.filter((id) => getTask(db, id));
+  if (present.length === 0) throw new DeskError("That task is no longer there", 404);
+
+  // Only what this decision actually adds is undone. A task the person had already put on today's
+  // plan themselves stays there when they take the decision back -- the undo reverses the
+  // decision, not the day.
+  const added: number[] = [];
+  for (const id of present) {
+    const already = db
+      .select({ id: dailyPlanEntries.id })
+      .from(dailyPlanEntries)
+      .where(and(eq(dailyPlanEntries.taskId, id), eq(dailyPlanEntries.date, today)))
+      .get();
+    if (already) continue;
+    addToPlan(db, today, id);
+    added.push(id);
+  }
   return {
-    label: label(Boolean(already)),
+    label: label(added.length),
     href: "/planner",
     undo: () => {
-      if (!already) removeFromPlan(db, today, taskId);
+      for (const id of added) removeFromPlan(db, today, id);
     },
   };
 }
@@ -153,19 +162,21 @@ function commit(db: DB, proposal: Proposal, now: Date): { label: string; href?: 
 
     case "commitment_owed": {
       const p = payloadOf<{ taskId: number; personName: string }>(proposal);
-      return planForToday(db, p.taskId, now, (already) =>
-        already ? "Already on today's plan" : `Planned for today${p.personName ? ` for ${p.personName}` : ""}`,
+      return planForToday(db, [p.taskId], now, (added) =>
+        added === 0 ? "Already on today's plan" : `Planned for today${p.personName ? ` for ${p.personName}` : ""}`,
       );
     }
 
     case "task_overdue": {
-      const p = payloadOf<{ taskId: number; dueDate: string }>(proposal);
-      // The date is pointedly NOT moved. Re-dating it here would make the card disappear by
-      // rewriting the evidence that produced it, and a due date that silently slides is the
-      // thing that let eight of these pile up unnoticed in the first place. Accepting says when
-      // the work happens; the date stays as the record of when it was meant to.
-      return planForToday(db, p.taskId, now, (already) =>
-        already ? "Already on today's plan" : "Planned for today",
+      // One card may stand for one task or for a whole container's worth of them.
+      const p = payloadOf<{ taskId?: number; taskIds?: number[] }>(proposal);
+      const ids = p.taskIds ?? (p.taskId === undefined ? [] : [p.taskId]);
+      // The dates are pointedly NOT moved. Re-dating here would make the card disappear by
+      // rewriting the evidence that produced it, and a due date that silently slides is the thing
+      // that let eight of these pile up unnoticed. Accepting says when the work happens; the date
+      // stays as the record of when it was meant to.
+      return planForToday(db, ids, now, (added) =>
+        added === 0 ? "Already on today's plan" : added === 1 ? "Planned for today" : `Planned ${added} for today`,
       );
     }
 

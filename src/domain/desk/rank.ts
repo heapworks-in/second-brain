@@ -9,6 +9,20 @@ import type { ProposalDraft } from "./types";
  * grow is a queue you stop looking at, and clearing seven is possible. */
 export const OPEN_CAP = 7;
 
+/**
+ * At most this many of any one kind among those seven.
+ *
+ * The overall cap was designed against a queue that grows. What actually happened is a queue that
+ * gets monopolised, which looks the same from the outside -- you stop seeing it either way. One
+ * programme import put eight `task_overdue` rows on the desk, which took all seven slots and left
+ * `task_stalled` and `commitment_unbooked` open and invisible behind them.
+ *
+ * Two, not one: a kind with a real cluster deserves more than a single voice, and five slots still
+ * remain for everything else. Nothing is dropped -- the rest stay open and surface as the ones in
+ * front of them are answered.
+ */
+export const PER_KIND_CAP = 2;
+
 /** Decisions of one kind the dismiss rate is measured over. Short enough to follow a change of
  * mind within a fortnight's use, long enough that two impatient dismissals do not bury a kind. */
 const DISMISS_WINDOW = 30;

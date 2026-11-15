@@ -71,21 +71,44 @@ describe("GET /api/desk", () => {
   /** The cap is a deliberate limit, so the page is told the real number too: seven of nineteen
    * without saying nineteen would be hiding its own arithmetic. */
   it("shows at most seven, and still reports how many are really waiting", async () => {
+    // Spread across kinds, because that is what the overall cap was written for. Eleven of ONE
+    // kind is the other case, and the per-kind cap holds it to two -- see below.
+    const kinds = ["capture_unfiled", "task_stalled", "task_overrun", "decision_stale", "prediction_due", "commitment_owed"] as const;
     const drafts: ProposalDraft[] = Array.from({ length: 11 }, (_, i) => ({
-      kind: "capture_unfiled",
+      kind: kinds[i % kinds.length],
       source: "item",
       sourceRef: `item:${i}`,
       title: `Card ${i}`,
       detail: "",
       payload: {},
-      urgency: i / 11,
+      urgency: (11 - i) / 11,
     }));
     reconcileProposals(getDb(), drafts, NOW);
     const body = await (await r.desk.GET()).json();
     expect(body.proposals).toHaveLength(7);
     expect(body.open).toBe(11);
-    // Best first: the highest urgency of the eleven leads.
-    expect(body.proposals[0].title).toBe("Card 10");
+    // Best first, by rank rather than by the order they were filed.
+    const ranks = body.proposals.map((p: { rank: number }) => p.rank);
+    expect([...ranks].sort((a: number, b: number) => b - a)).toEqual(ranks);
+  });
+
+  it("will not let one kind take the whole desk", async () => {
+    // Eleven of one kind is what actually happened: eight overdue tasks took all seven slots and
+    // left two other kinds open and permanently unseen.
+    const drafts: ProposalDraft[] = Array.from({ length: 11 }, (_, i) => ({
+      kind: "capture_unfiled" as const,
+      source: "item",
+      sourceRef: `item:${i}`,
+      title: `Card ${i}`,
+      detail: "",
+      payload: {},
+      urgency: (11 - i) / 11,
+    }));
+    reconcileProposals(getDb(), drafts, NOW);
+    const body = await (await r.desk.GET()).json();
+    expect(body.proposals).toHaveLength(2);
+    // Hidden, not dropped: they surface as the ones in front of them are answered.
+    expect(body.open).toBe(11);
   });
 });
 

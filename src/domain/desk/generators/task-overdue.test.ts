@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
-import { people, tasks } from "@/db/schema";
+import { containers, people, tasks } from "@/db/schema";
 import { addToPlan } from "@/domain/plan";
 import { setSetting } from "@/domain/settings";
 import { taskOverdue } from "./task-overdue";
@@ -100,5 +100,77 @@ describe("taskOverdue", () => {
     expect(justLate).toBeCloseTo(0.3, 5);
     expect(longLate).toBe(1);
     expect(longLate).toBeGreaterThan(justLate);
+  });
+});
+
+describe("taskOverdue grouping", () => {
+  function container(name: string, kind: "project" | "area" = "project") {
+    return t.db
+      .insert(containers)
+      .values({ kind, name, slug: name.toLowerCase().replace(/\s+/g, "-"), createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() })
+      .returning()
+      .get();
+  }
+
+  it("asks once about a container's worth of them, not once per task", () => {
+    // Seven identical cards from one import is what made the desk unanswerable: the real question
+    // is whether the programme is still happening, and no per-row card can ask it.
+    t = makeTestDb();
+    const c = container("Principal Engineer 52 weeks");
+    const ids = ["2026-11-01", "2026-11-01", "2026-11-03"].map((due, i) => task({ title: `Week ${i + 1}`, dueDate: due, containerId: c.id }).id);
+
+    const drafts = taskOverdue(t.db, NOW);
+    expect(drafts).toHaveLength(1);
+    const [draft] = drafts;
+    expect(draft.title).toBe("3 tasks in Principal Engineer 52 weeks are overdue");
+    expect(draft.count).toBe(3);
+    expect(draft.sourceRef).toBe(`container:${c.id}:overdue`);
+    expect(draft.payload).toMatchObject({ taskIds: ids, containerId: c.id, count: 3 });
+  });
+
+  it("takes the group's urgency and date from its worst member", () => {
+    // An average would make a three-week-old miss look mild because recent ones sit beside it.
+    t = makeTestDb();
+    const c = container("Atlas");
+    task({ title: "ancient", dueDate: "2026-10-20", containerId: c.id });
+    task({ title: "recent", dueDate: "2026-11-09", containerId: c.id });
+
+    const [draft] = taskOverdue(t.db, NOW);
+    expect(draft.detail).toContain("Oldest due 2026-10-20");
+    expect(draft.urgency).toBe(1);
+  });
+
+  it("leaves a lone overdue task as its own card", () => {
+    t = makeTestDb();
+    const c = container("Atlas");
+    const row = task({ dueDate: "2026-11-03", containerId: c.id });
+    const [draft] = taskOverdue(t.db, NOW);
+    expect(draft.sourceRef).toBe(`task:${row.id}`);
+    expect(draft.count).toBeUndefined();
+  });
+
+  it("never groups tasks that belong to nothing", () => {
+    // With no container there is no cause to name, and "4 tasks somewhere are overdue" is not a
+    // decision anybody can take.
+    t = makeTestDb();
+    task({ title: "a", dueDate: "2026-11-01" });
+    task({ title: "b", dueDate: "2026-11-01" });
+    const drafts = taskOverdue(t.db, NOW);
+    expect(drafts).toHaveLength(2);
+    expect(drafts.every((d) => d.sourceRef.startsWith("task:"))).toBe(true);
+  });
+
+  it("keeps separate containers separate", () => {
+    t = makeTestDb();
+    const a = container("Atlas");
+    const b = container("Health", "area");
+    task({ dueDate: "2026-11-01", containerId: a.id });
+    task({ dueDate: "2026-11-01", containerId: a.id });
+    task({ dueDate: "2026-11-02", containerId: b.id });
+    task({ dueDate: "2026-11-02", containerId: b.id });
+
+    const drafts = taskOverdue(t.db, NOW);
+    expect(drafts).toHaveLength(2);
+    expect(drafts.map((d) => d.title).sort()).toEqual(["2 tasks in Atlas are overdue", "2 tasks in Health are overdue"]);
   });
 });

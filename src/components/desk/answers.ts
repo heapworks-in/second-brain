@@ -11,17 +11,24 @@ import type { ProposalKind } from "@/db/enums";
  * `detail` already carries the number this refers to, so these stay short enough to read without
  * moving your eyes off the card.
  */
-export const PRIMARY_LABELS: Record<ProposalKind, string> = {
-  meeting_unprepared: "Start a prep note",
-  decision_stale: "Reaffirm",
-  task_overrun: "Re-estimate",
-  task_stalled: "Take it off the plan",
-  task_overdue: "Plan it for today",
-  prediction_due: "Resolve it",
-  capture_unfiled: "File it",
-  commitment_unbooked: "Book it",
-  commitment_owed: "Plan it for today",
-  ask_unanswered: "Owe it back",
+/**
+ * What the button promises, per kind.
+ *
+ * A function of the count, not a bare string: the original design insists a proposal must say
+ * exactly what accepting will do, and a grouped card reading "Plan it for today" while planning
+ * seven things breaks that outright. Kinds that never group ignore the argument.
+ */
+export const PRIMARY_LABELS: Record<ProposalKind, (count: number) => string> = {
+  meeting_unprepared: () => "Start a prep note",
+  decision_stale: () => "Reaffirm",
+  task_overrun: () => "Re-estimate",
+  task_stalled: () => "Take it off the plan",
+  task_overdue: (n) => (n === 1 ? "Plan it for today" : `Plan all ${n} for today`),
+  prediction_due: () => "Resolve it",
+  capture_unfiled: () => "File it",
+  commitment_unbooked: () => "Book it",
+  commitment_owed: () => "Plan it for today",
+  ask_unanswered: () => "Owe it back",
 };
 
 /** Said once, under the evidence, when the kind has been refused enough to be worth admitting

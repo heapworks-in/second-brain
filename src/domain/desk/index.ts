@@ -19,6 +19,16 @@ export type { ProposalDraft, Generator } from "./types";
  * limit rather than a coincidence, and a desk that showed seven of nineteen without saying
  * nineteen would be hiding its own arithmetic.
  */
+/** Absent means one. Grouped cards are the exception, so the common row stores nothing. */
+function countOf(payload: string): number {
+  try {
+    const n = (JSON.parse(payload) as { count?: unknown }).count;
+    return typeof n === "number" && n > 1 ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
 export function deskPayload(db: DB, now: Date): DeskDTO {
   const rows = openProposals(db, OPEN_CAP);
   const rates = new Map(rows.map((r) => [r.kind, 0]));
@@ -41,6 +51,7 @@ export function deskPayload(db: DB, now: Date): DeskDTO {
     rank: r.rank,
     createdAt: r.createdAt,
     dismissRate: rates.get(r.kind) ?? 0,
+    count: countOf(r.payload),
   }));
 
   return { proposals: list, open, decidedToday };

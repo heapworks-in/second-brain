@@ -20,6 +20,7 @@ function card(over: Partial<ProposalDTO> = {}): ProposalDTO {
     detail: "Estimated 1h, 2h 35m spent so far.",
     rank: 0.8,
     createdAt: "2026-11-08T09:00:00.000Z",
+    count: 1,
     dismissRate: 0,
     ...over,
   };

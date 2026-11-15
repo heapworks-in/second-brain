@@ -1,7 +1,7 @@
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { proposals } from "@/db/schema";
-import { dismissRates, rankDraft } from "./rank";
+import { dismissRates, PER_KIND_CAP, rankDraft } from "./rank";
 import type { ProposalDraft } from "./types";
 
 export interface ReconcileResult {
@@ -74,7 +74,7 @@ export function reconcileProposals(db: DB, drafts: ProposalDraft[], now: Date): 
             sourceRef: draft.sourceRef,
             title: draft.title,
             detail: draft.detail,
-            payload: JSON.stringify(draft.payload),
+            payload: JSON.stringify(payloadWithCount(draft)),
             rank,
             state: "open",
             createdAt: at,
@@ -87,7 +87,7 @@ export function reconcileProposals(db: DB, drafts: ProposalDraft[], now: Date): 
       // looked at later still reads correctly -- but `state` and `decidedAt` are not in this
       // `set`, which is rule 1 above and the reason this is not a plain upsert.
       tx.update(proposals)
-        .set({ title: draft.title, detail: draft.detail, payload: JSON.stringify(draft.payload), rank })
+        .set({ title: draft.title, detail: draft.detail, payload: JSON.stringify(payloadWithCount(draft)), rank })
         .where(eq(proposals.id, row.id))
         .run();
       result.refreshed += 1;
@@ -107,14 +107,38 @@ export function reconcileProposals(db: DB, drafts: ProposalDraft[], now: Date): 
   return result;
 }
 
-/** What the desk shows: open, best first, capped. The cap is applied here rather than in the
- * page, so every surface that asks agrees on what "on the desk" means. */
-export function openProposals(db: DB, limit: number) {
-  return db
+/**
+ * What the desk shows: open, best first, capped overall and per kind. Both caps are applied here
+ * rather than in the page, so every surface that asks agrees on what "on the desk" means.
+ *
+ * The per-kind cap is taken in JS rather than SQL deliberately. Doing it in SQL needs a window
+ * function over a table this small, and the ordering has to be applied before either cap anyway --
+ * so the query stays the one readable statement it was, and the two caps sit next to each other
+ * where the reason for both can be read at once.
+ */
+/** `count` lives in payload rather than a column of its own -- payload is already JSON, already
+ *  written on every sweep, and already parsed when accepting. One is never stored: absent means
+ *  one, so every existing row keeps reading correctly. */
+function payloadWithCount(draft: ProposalDraft): Record<string, unknown> {
+  return (draft.count ?? 1) > 1 ? { ...draft.payload, count: draft.count } : draft.payload;
+}
+
+export function openProposals(db: DB, limit: number, perKind = PER_KIND_CAP) {
+  const ordered = db
     .select()
     .from(proposals)
     .where(eq(proposals.state, "open"))
     .orderBy(sql`${proposals.rank} desc, ${proposals.createdAt} asc`)
-    .limit(limit)
     .all();
+
+  const taken = new Map<string, number>();
+  const out: typeof ordered = [];
+  for (const row of ordered) {
+    if (out.length >= limit) break;
+    const n = taken.get(row.kind) ?? 0;
+    if (n >= perKind) continue;
+    taken.set(row.kind, n + 1);
+    out.push(row);
+  }
+  return out;
 }

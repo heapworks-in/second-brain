@@ -237,6 +237,59 @@ describe("decideProposal", () => {
       expect(() => decideProposal(t.db, p.id, "accept", NOW)).toThrow(/no longer there/);
     });
   });
+  describe("task_overdue, grouped", () => {
+    function overdue(n: number) {
+      return Array.from({ length: n }, (_, i) =>
+        t.db
+          .insert(tasks)
+          .values({ title: `Week ${i + 1}`, dueDate: "2026-11-01", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() })
+          .returning()
+          .get(),
+      );
+    }
+
+    it("plans every one of them, and undoing takes every one back", () => {
+      t = makeTestDb();
+      const rows = overdue(3);
+      const p = open({ kind: "task_overdue", payload: { taskIds: rows.map((r) => r.id), count: 3 } });
+
+      expect(decideProposal(t.db, p.id, "accept", NOW).label).toBe("Planned 3 for today");
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(3);
+
+      undoProposal(t.db, p.id);
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(0);
+    });
+
+    it("leaves a task the person had already planned where they put it", () => {
+      // The undo reverses the decision, not the day. Removing an entry this decision never added
+      // would quietly delete something off their plan that they chose themselves.
+      t = makeTestDb();
+      const rows = overdue(2);
+      t.db.insert(dailyPlanEntries).values({ date: "2026-11-08", taskId: rows[0].id, createdAt: NOW.toISOString() }).run();
+      const p = open({ kind: "task_overdue", payload: { taskIds: rows.map((r) => r.id), count: 2 } });
+
+      expect(decideProposal(t.db, p.id, "accept", NOW).label).toBe("Planned for today");
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(2);
+
+      undoProposal(t.db, p.id);
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(1);
+    });
+
+    it("carries on when one of the group has since been deleted", () => {
+      t = makeTestDb();
+      const rows = overdue(2);
+      const p = open({ kind: "task_overdue", payload: { taskIds: [rows[0].id, 404], count: 2 } });
+      expect(decideProposal(t.db, p.id, "accept", NOW).label).toBe("Planned for today");
+      expect(listPlan(t.db, "2026-11-08")).toHaveLength(1);
+    });
+
+    it("refuses when every task in the group has gone", () => {
+      t = makeTestDb();
+      const p = open({ kind: "task_overdue", payload: { taskIds: [404, 405], count: 2 } });
+      expect(() => decideProposal(t.db, p.id, "accept", NOW)).toThrow(/no longer there/);
+    });
+  });
+
   describe("prediction_due", () => {
     it("commits nothing and sends you where the answer can be given", () => {
       t = makeTestDb();

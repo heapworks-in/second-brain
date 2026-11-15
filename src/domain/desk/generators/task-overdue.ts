@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, isNull, lte } from "drizzle-orm";
-import { dailyPlanEntries, tasks } from "@/db/schema";
+import { containers, dailyPlanEntries, tasks } from "@/db/schema";
 import { addDays, localDay } from "@/domain/activity";
 import { MINE } from "@/domain/tasks";
 import { daysBetween } from "@/lib/deadline";
@@ -32,8 +32,10 @@ export const taskOverdue: Generator = (db, now) => {
       title: tasks.title,
       dueDate: tasks.dueDate,
       containerId: tasks.containerId,
+      containerName: containers.name,
     })
     .from(tasks)
+    .leftJoin(containers, eq(containers.id, tasks.containerId))
     // A left join and a null check, rather than NOT IN: the planned-for-today rows are the ones
     // being excluded, and an anti-join says that in one place the query planner understands.
     .leftJoin(
@@ -53,18 +55,71 @@ export const taskOverdue: Generator = (db, now) => {
     )
     .all();
 
-  return rows.map((row) => {
+  const ago = (days: number) => (days === 1 ? "a day" : `${days} days`);
+  // Matching `commitment_owed`'s shape on purpose: a third of the scale on the first qualifying
+  // day, all of it at a fortnight, so a date missed last week outranks yesterday's.
+  const urgency = (days: number) => Math.min(1, 0.3 + (days - graceDays) / 14);
+
+  // A container is the honest cause: these are late because the thing they belong to has stalled,
+  // not because each slipped on its own. Asking seven times what is really one question is what
+  // made the desk unanswerable -- and a task with no container has no cause to name, so it never
+  // groups.
+  const byContainer = new Map<number, typeof rows>();
+  const alone: typeof rows = [];
+  for (const row of rows) {
+    if (row.containerId === null) {
+      alone.push(row);
+      continue;
+    }
+    const group = byContainer.get(row.containerId);
+    if (group) group.push(row);
+    else byContainer.set(row.containerId, [row]);
+  }
+  for (const [id, group] of byContainer) {
+    if (group.length === 1) {
+      alone.push(group[0]);
+      byContainer.delete(id);
+    }
+  }
+
+  const singles = alone.map((row) => {
     const days = daysBetween(row.dueDate!, today);
     return {
       kind: "task_overdue" as const,
       source: "task" as const,
       sourceRef: `task:${row.id}`,
       title: row.title,
-      detail: `Due ${row.dueDate}, ${days === 1 ? "a day" : `${days} days`} ago. Nothing set aside for it today.`,
+      detail: `Due ${row.dueDate}, ${ago(days)} ago. Nothing set aside for it today.`,
       payload: { taskId: row.id, dueDate: row.dueDate, days, containerId: row.containerId },
-      // Matching `commitment_owed`'s shape on purpose: a third of the scale on the first
-      // qualifying day, all of it at a fortnight, so a date missed last week outranks yesterday's.
-      urgency: Math.min(1, 0.3 + (days - graceDays) / 14),
+      urgency: urgency(days),
     };
   });
+
+  const grouped = [...byContainer.entries()].map(([containerId, group]) => {
+    // The group is as urgent as its worst member, and names that one's date: an average would
+    // make a three-week-old miss look like a mild one because four recent tasks sit beside it.
+    const oldest = group.reduce((a, b) => (a.dueDate! <= b.dueDate! ? a : b));
+    const days = daysBetween(oldest.dueDate!, today);
+    const where = group[0].containerName ?? "one project";
+    return {
+      kind: "task_overdue" as const,
+      source: "task" as const,
+      // Keyed on the container, not its members, so the group keeps its identity across sweeps --
+      // and so dismissing it stays dismissed when one more task in it goes past due.
+      sourceRef: `container:${containerId}:overdue`,
+      title: `${group.length} tasks in ${where} are overdue`,
+      detail: `Oldest due ${oldest.dueDate}, ${ago(days)} ago. Nothing set aside for any of them today.`,
+      payload: {
+        taskIds: group.map((r) => r.id),
+        containerId,
+        count: group.length,
+        days,
+        dueDate: oldest.dueDate,
+      },
+      count: group.length,
+      urgency: urgency(days),
+    };
+  });
+
+  return [...grouped, ...singles];
 };

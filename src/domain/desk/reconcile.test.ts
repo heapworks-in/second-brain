@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { proposals } from "@/db/schema";
 import { reconcileProposals, openProposals } from "./reconcile";
+import { OPEN_CAP, PER_KIND_CAP } from "./rank";
 import type { ProposalDraft } from "./types";
 
 let t: TestDb;
@@ -130,5 +131,48 @@ describe("reconcileProposals", () => {
       new Date("2026-11-08T10:00:00.000Z"),
     );
     expect(openProposals(t.db, 7).map((p) => p.sourceRef)).toEqual(["task:2", "task:1"]);
+  });
+});
+
+describe("openProposals and one noisy kind", () => {
+  function draft(kind: ProposalDraft["kind"], ref: string, urgency: number): ProposalDraft {
+    return { kind, source: "task", sourceRef: ref, title: ref, detail: "", payload: {}, urgency };
+  }
+
+  it("stops one kind taking every slot, and keeps the others visible", () => {
+    // Eight task_overdue rows took all seven slots on the real desk, leaving two other kinds open
+    // and permanently unseen. The overall cap was designed against a queue that grows; this is a
+    // queue that gets monopolised, which looks identical from the outside.
+    t = makeTestDb();
+    const flood = Array.from({ length: 8 }, (_, i) => draft("task_overdue", `task:${i}`, 1));
+    reconcileProposals(t.db, [...flood, draft("task_stalled", "task:99", 0.2), draft("commitment_unbooked", "item:1", 0.15)], NOW);
+
+    const shown = openProposals(t.db, OPEN_CAP);
+    const kinds = shown.map((p) => p.kind);
+    expect(kinds.filter((k) => k === "task_overdue")).toHaveLength(PER_KIND_CAP);
+    expect(kinds).toContain("task_stalled");
+    expect(kinds).toContain("commitment_unbooked");
+  });
+
+  it("hides the rest rather than dropping them, and still counts them", () => {
+    t = makeTestDb();
+    reconcileProposals(
+      t.db,
+      Array.from({ length: 6 }, (_, i) => draft("task_overdue", `task:${i}`, 1)),
+      NOW,
+    );
+    expect(openProposals(t.db, OPEN_CAP)).toHaveLength(PER_KIND_CAP);
+    // Every one is still open and will surface as those in front are answered.
+    expect(t.db.select().from(proposals).where(eq(proposals.state, "open")).all()).toHaveLength(6);
+  });
+
+  it("keeps the best of a kind, not an arbitrary two", () => {
+    t = makeTestDb();
+    reconcileProposals(
+      t.db,
+      [draft("task_overdue", "task:low", 0.1), draft("task_overdue", "task:high", 1), draft("task_overdue", "task:mid", 0.5)],
+      NOW,
+    );
+    expect(openProposals(t.db, OPEN_CAP).map((p) => p.sourceRef)).toEqual(["task:high", "task:mid"]);
   });
 });

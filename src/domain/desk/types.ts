@@ -20,6 +20,15 @@ export interface ProposalDraft {
   /** Time pressure, 0..1, normalised by the generator because only it knows what pressure means
    * for its own kind: hours until a meeting, days past a resolve-by date, days since a capture. */
   urgency: number;
+  /**
+   * How many things this one card answers for. One unless the generator grouped.
+   *
+   * It exists so the button can say what accepting will do: the original design is firm that a
+   * generator unable to state that "has no business filing a proposal", and a grouped card
+   * labelled "Plan it for today" while planning seven things breaks exactly that promise. Rides
+   * in `payload` rather than a column, since payload is already JSON and already read on accept.
+   */
+  count?: number;
 }
 
 /**

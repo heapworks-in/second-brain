@@ -741,6 +741,9 @@ export interface ProposalDTO {
   /** How often this kind has been refused lately, 0..1 — what the card's own "why am I seeing
    * this?" line reads from, so the ranking is legible rather than mysterious. */
   dismissRate: number;
+  /** How many things this card answers for, so the button can name the number it is about to
+   * act on. One unless the generator grouped. */
+  count: number;
 }
 
 export interface DeskDTO {
