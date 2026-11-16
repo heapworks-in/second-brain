@@ -156,7 +156,7 @@ for _ in $(seq 1 40); do
 done
 
 ROUTE_FAILED=0
-for route in / /today /capture /planner /inbox /search /log /goals /review; do
+for route in / /today /capture /planner /inbox /search /log /goals /review /desk /insights; do
   code="$(curl -sSL -o "$WORK/body" -w '%{http_code}' "http://127.0.0.1:$PORT$route" 2>/dev/null || echo 000)"
   if [ "$code" = "200" ] && ! grep -qi "internal server error\|application error" "$WORK/body"; then
     pass "$route -> 200"
