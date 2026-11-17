@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db/client";
+import { identityNames } from "@/domain/trackers/identity";
 import { AFK_SECONDS, ingestHeartbeat, isPaused, listExclusions, recordHelperSeen } from "@/domain/activity";
 import { requireHelperToken } from "@/lib/activity-auth";
 import { errorResponse } from "@/lib/api";
@@ -45,6 +46,11 @@ export async function POST(req: Request): Promise<Response> {
         domains: ex.filter((e) => e.kind === "domain").map((e) => e.pattern),
       },
       paused,
+      // Who the helper should treat as me when it reads a conversation in Slack. Handed back as
+      // policy for the same reason the exclusions are: the helper would otherwise need its own
+      // copy of a list that already exists here, and the two would drift. The same list a tracker
+      // import matches an Owner column against -- one answer to "how is my name written".
+      identities: identityNames(db),
     });
   } catch (err) {
     return errorResponse(err);

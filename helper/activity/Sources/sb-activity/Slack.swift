@@ -2,8 +2,9 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// Reads the asks sitting in Slack's Activity view and reports them as observations. Reports only:
-// whether something is an ask, how urgent it is and who it is owed to are all decided server-side.
+// Reads the asks sitting in Slack's Activity view, and the questions you asked that nobody
+// answered, and reports both as observations. Reports only: whether something is an ask, how
+// urgent it is and who it is owed to are all decided server-side.
 //
 // This lives in the activity helper rather than in its own binary for one reason: Accessibility is
 // granted per executable, and an ad-hoc signed one loses the grant on every rebuild (see
@@ -20,6 +21,10 @@ struct Observation: Encodable {
     var text: String
     var url: String?
     var context: String?
+    /// Free-form, and carries one fact today: `answeredAt`, when a message of mine was followed by
+    /// another in the same conversation. The server cannot work that out -- it never sees the
+    /// conversation, only the rows worth keeping out of it.
+    var meta: [String: String]?
 }
 
 /// Reads Slack through Accessibility. Holds one piece of state -- whether Chromium has been asked
@@ -41,6 +46,10 @@ final class SlackReader {
     /// Row kinds seen but not imported, surfaced by the diagnostic. Learning what else Slack puts
     /// in this view beats either dropping it silently or importing it on a guess.
     private(set) var skipped: Set<String> = []
+    /// Every name seen on a message in a conversation, for the diagnostic. The one thing that fails
+    /// without a symptom here is the list of my own spellings not containing the one Slack prints,
+    /// and the only way to tell is to see the names Slack is actually putting on these rows.
+    private(set) var sendersSeen: Set<String> = []
 
     // MARK: - The two id schemes
 
@@ -72,14 +81,20 @@ final class SlackReader {
     /// `https://app.slack.com/client/T0H7I8J9K/activity-inbox` -- needed to rebuild a permalink an
     /// Activity row does not carry.
     private static let teamId = try! NSRegularExpression(pattern: #"/client/(T[A-Z0-9]+)"#)
+    /// `your-next-job (Channel) - Acme - Slack` -- the name, then what kind of thing it is.
+    private static let windowTitle = try! NSRegularExpression(pattern: #"^(.+?) \(([^)]+)\)"#)
     private static let nonSlug = try! NSRegularExpression(pattern: #"[^a-z0-9]+"#)
     private static let whitespace = try! NSRegularExpression(pattern: #"\s+"#)
 
-    private let iso: ISO8601DateFormatter = {
+    private static let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+
+    private static func isoString(from seconds: Double) -> String {
+        iso.string(from: Date(timeIntervalSince1970: seconds))
+    }
 
     // MARK: - Public surface
 
@@ -94,54 +109,143 @@ final class SlackReader {
         return Self.selectedTab(window)
     }
 
-    /// Everything Slack has currently drawn in its Activity view, or `nil` when there is nothing to
-    /// read -- Slack not running, no window, or a view this must not read.
+    /// Everything worth reporting out of whatever Slack has currently drawn, or `nil` when there is
+    /// nothing to read at all -- Slack not running, no window, Accessibility not granted.
     ///
-    /// It refuses any view but Activity on purpose. Every row in Activity is by definition somebody
-    /// addressing you; a channel is full of messages that have nothing to do with you, and reporting
-    /// those as asks you owe would be worse than reporting nothing. `requireActivity` is relaxed
-    /// only by the diagnostic, which posts nothing.
-    func read(requireActivity: Bool = true) -> [Observation]? {
+    /// Two directions, decided per row rather than per view:
+    ///
+    /// An **Activity** row is by definition somebody addressing you, so all of them are reported.
+    ///
+    /// A **channel or DM** row is reported only when it is one of yours *and* it asked something.
+    /// That rule is what used to be a blanket refusal to read any view but Activity, and it is the
+    /// same protection stated per row instead of per view: a channel is full of messages that have
+    /// nothing to do with you, and reporting those as asks you owe would be worse than reporting
+    /// nothing. Phrased this way it also stops being a reason to miss the other half of a backlog --
+    /// the questions you asked, which nobody will ever remind you went unanswered.
+    ///
+    /// `mine` is the spellings of your own name, handed down by the server (`identity.names`, the
+    /// same list a tracker import matches an Owner column against). Empty means nothing is claimed
+    /// as yours: without it, somebody else's message filed as one of mine would vanish from the
+    /// half of the desk that owes them a reply, which is worse than this feature not working.
+    func read(mine: Set<String> = []) -> [Observation]? {
         guard AXIsProcessTrusted(), let app = Self.slackApp() else { return nil }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         ask(axApp)
 
         guard let window = Self.window(axApp) else { return nil }
-        if requireActivity && Self.selectedTab(window) != Self.activityTab { return nil }
-
         let team = Self.team(window)
-        var seen = Set<String>()
-        var out: [Observation] = []
+
+        var inbound: [Message] = []
+        var conversation: [Message] = []
 
         for (element, row) in Self.rows(window) {
-            let message: Message?
             switch row {
             case let .activity(_, channel, ts):
-                message = Self.readActivityRow(element, channel: channel, ts: ts, team: team)
+                if let message = Self.readActivityRow(element, channel: channel, ts: ts, team: team) {
+                    inbound.append(message)
+                }
             case let .channel(ts):
-                message = Self.readChannelRow(element, ts: ts)
+                guard let message = Self.readChannelRow(element, ts: ts) else { continue }
+                if let sender = message.sender { sendersSeen.insert(sender) }
+                conversation.append(message)
             case let .unknown(kind):
                 skipped.insert(kind)
-                continue
             }
-            guard let message else { continue }
-            let externalId = "\(message.channel)/\(message.ts)"
-            guard seen.insert(externalId).inserted, let seconds = Double(message.ts) else { continue }
-            out.append(Observation(
-                source: Self.source,
-                externalId: externalId,
-                // The message's own timestamp, never now. An ask read today that was made three
-                // weeks ago has earned three weeks of urgency, and stamping the read time would
-                // quietly reset a whole backlog of waiting people to zero.
-                at: iso.string(from: Date(timeIntervalSince1970: seconds)),
-                kind: message.channel.hasPrefix("D") ? "dm" : "mention",
-                actorHandle: Self.handle(message.sender),
-                actorName: message.sender,
-                text: message.text,
-                url: message.url,
-                context: message.context))
+        }
+        conversation = Self.carrySenders(conversation)
+
+        var out: [Observation] = []
+        var seen = Set<String>()
+        for message in inbound {
+            let kind = message.channel.hasPrefix("D") ? "dm" : "mention"
+            if let o = observation(message, kind: kind), seen.insert(o.externalId).inserted { out.append(o) }
+        }
+        // A channel row carries no label naming its own channel -- the whole view is that channel,
+        // so the name is in the window title instead.
+        let here = Self.viewName(window)
+        for (message, answeredAt) in Self.ownQuestions(conversation, mine: mine) {
+            var message = message
+            if message.context == nil { message.context = here }
+            guard let o = observation(message, kind: "sent", answeredAt: answeredAt),
+                  seen.insert(o.externalId).inserted else { continue }
+            out.append(o)
         }
         return out
+    }
+
+    /// Slack prints the sender once for a run of messages from one person, so a row with no name
+    /// belongs to whoever spoke last -- but only inside the same conversation. Resetting on the
+    /// channel is what stops a sender that could not be read from handing one person's words to
+    /// another, which in this direction would file their ask as a question of mine and lose it from
+    /// the half of the desk that owes them a reply.
+    ///
+    /// Internal rather than private so the self-check can assert it: it fails silently.
+    static func carrySenders(_ rows: [Message]) -> [Message] {
+        var out: [Message] = []
+        var lastSender: String?
+        var lastChannel: String?
+        for var row in rows {
+            if row.channel != lastChannel { lastSender = nil }
+            lastChannel = row.channel
+            if let sender = row.sender { lastSender = sender } else { row.sender = lastSender }
+            out.append(row)
+        }
+        return out
+    }
+
+    /// Which of these are mine, still asking something, and whether anything came after each.
+    ///
+    /// Anything later in the same conversation counts as an answer, including another message of my
+    /// own. So what can be left hanging is the newest message in a conversation and nothing else:
+    /// three questions in a row leave only the last, and a question I followed with "thanks, all
+    /// clear" is one I plainly stopped waiting on. It misses a question I buried under my own later
+    /// chatter, which is the right way round -- at most one card per conversation, and only when my
+    /// question is the last thing anybody said.
+    ///
+    /// The tree is a viewport, so a message that is merely the last one *rendered* reads as
+    /// unanswered; the pass that renders what follows it corrects the row, because the server
+    /// upserts on `(source, externalId)`.
+    static func ownQuestions(_ rows: [Message], mine: Set<String>)
+        -> [(Message, String?)] {
+        if mine.isEmpty { return [] }
+        var next: [String: Double] = [:]  // externalId -> the ts that followed it
+        var byChannel: [String: [Message]] = [:]
+        for row in rows { byChannel[row.channel, default: []].append(row) }
+        for (_, list) in byChannel {
+            let ordered = list.sorted { (Double($0.ts) ?? 0) < (Double($1.ts) ?? 0) }
+            for (i, row) in ordered.enumerated() where i + 1 < ordered.count {
+                next["\(row.channel)/\(row.ts)"] = Double(ordered[i + 1].ts) ?? 0
+            }
+        }
+        return rows.compactMap { row in
+            guard let sender = row.sender, mine.contains(sender.lowercased()) else { return nil }
+            // Of my own messages, only the ones that asked for something. Everything else I type is
+            // conversation, and a card a day after every "thanks" would bury the questions that are
+            // genuinely hanging -- so the rest is not reported, and nothing keeps a copy of
+            // everything I say in Slack. It misses "send me the creds when you can", which is the
+            // honest trade for that.
+            guard row.text.contains("?") else { return nil }
+            let after = next["\(row.channel)/\(row.ts)"]
+            return (row, after.map { isoString(from: $0) })
+        }
+    }
+
+    private func observation(_ message: Message, kind: String, answeredAt: String? = nil) -> Observation? {
+        guard let seconds = Double(message.ts) else { return nil }
+        return Observation(
+            source: Self.source,
+            externalId: "\(message.channel)/\(message.ts)",
+            // The message's own timestamp, never now. An ask read today that was made three
+            // weeks ago has earned three weeks of urgency, and stamping the read time would
+            // quietly reset a whole backlog of waiting people to zero.
+            at: Self.isoString(from: seconds),
+            kind: kind,
+            actorHandle: Self.handle(message.sender),
+            actorName: message.sender,
+            text: message.text,
+            url: message.url,
+            context: message.context,
+            meta: answeredAt.map { ["answeredAt": $0] })
     }
 
     // MARK: - Attribute plumbing
@@ -225,6 +329,17 @@ final class SlackReader {
         return team
     }
 
+    /// Where Slack says I am, from its window title: `your-next-job (Channel) - Acme - Slack`, or a
+    /// person's name for a DM. Read against a real workspace, which is how the hash came to be added
+    /// here rather than expected in the title -- Slack does not put one there.
+    private static func viewName(_ window: AXUIElement) -> String? {
+        guard let title = string(window, kAXTitleAttribute as String) else { return nil }
+        if let name = capture(hashName, title, 1) { return "#\(name)" }
+        guard let name = capture(windowTitle, title, 1), let kind = capture(windowTitle, title, 2) else { return nil }
+        // A channel gets its hash back; a DM is a person and reads better without one.
+        return kind.lowercased().contains("channel") ? "#\(name)" : name
+    }
+
     private enum Row {
         case activity(kind: String, channel: String, ts: String)
         case channel(ts: String)
@@ -281,7 +396,7 @@ final class SlackReader {
 
     // MARK: - Reading a row
 
-    private struct Message {
+    struct Message {
         var ts: String
         var channel: String
         var sender: String?

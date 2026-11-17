@@ -18,6 +18,7 @@ let r: {
   status: typeof import("./activity/status/route");
   openSettings: typeof import("./activity/open-settings/route");
   label: typeof import("./activity/sessions/[id]/label/route");
+  identity: typeof import("./settings/identity/route");
 };
 const TOKEN = "abc123";
 const T0 = new Date(2026, 8, 16, 10, 0, 0).getTime(); // local 10:00 so every heartbeat lands on the same local day
@@ -57,6 +58,7 @@ beforeAll(async () => {
     status: await import("./activity/status/route"),
     openSettings: await import("./activity/open-settings/route"),
     label: await import("./activity/sessions/[id]/label/route"),
+    identity: await import("./settings/identity/route"),
   };
 });
 afterAll(() => {
@@ -85,6 +87,12 @@ describe("activity api", () => {
     const data = await res.json();
     expect(data.exclusions.apps).toContain("com.1password.1password");
     expect(data.paused).toBe(false);
+    // The Slack reader is told who I am rather than configured with it separately: without this
+    // it claims nothing as mine and the questions I asked are never read.
+    expect(data.identities).toEqual([]);
+    await r.identity.PATCH(json("PATCH", "/api/settings/identity", { names: ["Avinash", "Avinash V"] }, TOKEN));
+    const told = await (await r.heartbeat.POST(json("POST", "/api/activity/heartbeat", { ...body, at: at(1) }, TOKEN))).json();
+    expect(told.identities).toEqual(["Avinash", "Avinash V"]);
     await r.heartbeat.POST(json("POST", "/api/activity/heartbeat", { ...body, at: at(300) }, TOKEN));
     await r.heartbeat.POST(json("POST", "/api/activity/heartbeat", { at: at(305), appId: "x", appName: "x", title: null, url: null, idleSeconds: 400 }, TOKEN));
     const d = await getDay();

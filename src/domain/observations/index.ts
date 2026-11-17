@@ -49,7 +49,31 @@ const BROADCAST_OPENERS = /^\s*@(channel|here|everyone)\b/i;
  * This is the server judging, which is its job: the adaptor reported faithfully what it saw.
  */
 export function classifyKind(kind: string, text?: string): string {
+  // Not my own messages. "Addressed to a room rather than to you" is a statement about somebody
+  // else's message; applied to one of mine it would read my own `@here anyone know …?` as an
+  // announcement and drop the question I am waiting on an answer to.
+  if (kind === "sent") return kind;
   return text && BROADCAST_OPENERS.test(text) ? "broadcast" : kind;
+}
+
+/**
+ * What an adaptor said before, kept when a later pass does not repeat it.
+ *
+ * `answeredAt` is the case this exists for. A reader sees a conversation through a viewport: the
+ * pass that renders the reply reports it, and the next pass -- the person has scrolled, or the
+ * window is showing the tail again -- may not. Replacing `meta` wholesale would let that second
+ * pass say the reply had un-arrived, which would put a card back on the desk for a question that
+ * was answered days ago, take it away again on the pass after, and do it all over every half
+ * minute. A fact an adaptor has reported once is therefore kept until it reports a different value
+ * for it.
+ */
+function mergeMeta(stored: string, incoming: Record<string, unknown> | undefined): string {
+  if (!incoming) return stored;
+  try {
+    return JSON.stringify({ ...(JSON.parse(stored) as Record<string, unknown>), ...incoming });
+  } catch {
+    return JSON.stringify(incoming);
+  }
 }
 
 /**
@@ -69,7 +93,7 @@ export function ingestObservations(db: DB, rows: ObservationInput[], now = new D
   db.transaction((tx) => {
     for (const row of rows) {
       const existing = tx
-        .select({ id: observations.id })
+        .select({ id: observations.id, meta: observations.meta })
         .from(observations)
         .where(and(eq(observations.source, row.source), eq(observations.externalId, row.externalId)))
         .get();
@@ -85,7 +109,10 @@ export function ingestObservations(db: DB, rows: ObservationInput[], now = new D
         updatedAt: at,
       };
       if (existing) {
-        tx.update(observations).set(values).where(eq(observations.id, existing.id)).run();
+        tx.update(observations)
+          .set({ ...values, meta: mergeMeta(existing.meta, row.meta) })
+          .where(eq(observations.id, existing.id))
+          .run();
         result.updated += 1;
       } else {
         tx.insert(observations)

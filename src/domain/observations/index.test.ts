@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
+import type { DB } from "@/db/client";
 import { observations } from "@/db/schema";
 import { createTask } from "@/domain/tasks";
 import { classifyKind, ingestObservations, linkObservationToTask, openObservations, sweepObservationText } from "./index";
@@ -115,6 +116,12 @@ describe("classifyKind", () => {
     expect(classifyKind("mention", undefined)).toBe("mention");
   });
 
+  it("does not read my own announcement as somebody addressing a room", () => {
+    // The rule is about other people's messages. Mine opening with @here is still a question I am
+    // waiting on an answer to, and classifying it as a broadcast would drop it from both halves.
+    expect(classifyKind("sent", "@here anyone know where the staging creds live?")).toBe("sent");
+  });
+
   it("decides at ingest, so the verdict outlives the text", () => {
     t = makeTestDb();
     ingestObservations(t.db, [obs({ text: "@channel new job posted" })], NOW);
@@ -127,5 +134,34 @@ describe("classifyKind", () => {
     const [swept] = t.db.select().from(observations).all();
     expect(swept.text).toBe("");
     expect(swept.kind).toBe("broadcast");
+  });
+});
+
+describe("meta", () => {
+  const sent = (meta?: Record<string, unknown>) => ({
+    source: "slack",
+    externalId: "C1/1794429455.856259",
+    at: "2026-11-01T09:00:00.000Z",
+    kind: "sent",
+    text: "any update on the staging credentials?",
+    meta,
+  });
+  const stored = (db: DB) => JSON.parse(db.select().from(observations).all()[0].meta) as Record<string, unknown>;
+
+  it("keeps a fact a later pass did not repeat", () => {
+    // A reader sees a conversation through a viewport. The pass that renders the reply reports it;
+    // the next one may not, and must not be able to say the reply un-arrived -- that would flap a
+    // card on and off the desk every half minute for a question answered days ago.
+    t = makeTestDb();
+    ingestObservations(t.db, [sent({ answeredAt: "2026-11-02T10:00:00.000Z" })]);
+    ingestObservations(t.db, [sent()]);
+    expect(stored(t.db).answeredAt).toBe("2026-11-02T10:00:00.000Z");
+  });
+
+  it("still takes a new value for a key it already had", () => {
+    t = makeTestDb();
+    ingestObservations(t.db, [sent({ answeredAt: "2026-11-02T10:00:00.000Z" })]);
+    ingestObservations(t.db, [sent({ answeredAt: "2026-11-03T10:00:00.000Z" })]);
+    expect(stored(t.db).answeredAt).toBe("2026-11-03T10:00:00.000Z");
   });
 });

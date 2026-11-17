@@ -5,15 +5,18 @@ import { X } from "lucide-react";
 import { Button, Input, SectionHeading } from "../ui";
 
 /**
- * The names that mean me in somebody else's spreadsheet.
+ * The names that mean me where something outside this app wrote my name down.
  *
  * The app has never needed to know who I am: my own work is a row with no owner, which cannot
- * be mistyped. A file is the exception -- it names me in an Owner column, in whatever form the
- * person who built it used -- so this is the one place the app holds my own name, and it holds
- * it as a list because "Avinash", "Avinash V" and "AV" are all me in three different trackers.
+ * be mistyped. Everything that came from somewhere else is the exception -- a tracker names me in
+ * an Owner column, Slack prints my display name on my own messages -- so this is the one place the
+ * app holds my own name, and it holds it as a list because "Avinash", "Avinash V" and "AV" are all
+ * me in three different trackers, and Slack is a fourth spelling again.
  *
  * The import asks for this the first time; it lives here so it can be corrected without
- * importing anything, and so a name added later applies to the next file by itself.
+ * importing anything, and so a name added later applies by itself. The Slack reader is handed the
+ * same list, which is why the copy names it: a missing spelling there costs the questions you
+ * asked, silently, and nothing else in the app would ever mention it.
  */
 export function IdentitySection({ initial }: { initial: string[] }) {
   const [names, setNames] = useState(initial);
@@ -56,8 +59,9 @@ export function IdentitySection({ initial }: { initial: string[] }) {
     <section className="pane p-4 flex flex-col gap-3" aria-label="You">
       <SectionHeading>You</SectionHeading>
       <p className="text-[12.5px] text-fg-muted m-0">
-        How your name is spelled in the Owner column of a tracker. Rows naming one of these are yours; every other row is tracked but stays out of
-        your planner, your desk and your week.
+        How your name is written where something else wrote it. Tracker rows naming one of these are yours; every other row is tracked but stays out
+        of your planner, your desk and your week. Add your Slack display name too, and the questions you asked there get chased as well as the ones
+        you owe.
       </p>
       <div className="flex items-center gap-2 flex-wrap">
         {names.map((name) => (
@@ -74,7 +78,7 @@ export function IdentitySection({ initial }: { initial: string[] }) {
             </button>
           </span>
         ))}
-        {names.length === 0 && <span className="text-[12.5px] text-fg-faint">No names yet. The first import will ask.</span>}
+        {names.length === 0 && <span className="text-[12.5px] text-fg-faint">No names yet. The first import will ask, and Slack needs one too.</span>}
       </div>
       <div className="flex items-center gap-2">
         <Input

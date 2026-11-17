@@ -4,6 +4,12 @@ struct HeartbeatResponse: Decodable {
     struct Exclusions: Decodable { var apps: [String]; var domains: [String] }
     var exclusions: Exclusions
     var paused: Bool
+    /// The spellings of the user's own name. Policy, like the exclusions: the server owns it, the
+    /// helper is told, and nothing has to be configured in two places. Defaulted rather than
+    /// optional rather than defaulted because a synthesized `Decodable` does not apply default
+    /// values for missing keys -- it throws, and a throw here would drop the exclusions and the
+    /// pause along with it.
+    var identities: [String]?
 }
 
 final class Client {

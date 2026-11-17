@@ -51,24 +51,45 @@ func currentPermissions() -> Permissions {
 // Run from a shell this reports the shell's Accessibility grant, not the launch agent's -- see the
 // note in helper_status.
 if args.contains("--slack") {
-    let anyView = args.contains("--any-view")
+    // The names to treat as mine. The helper proper is handed these by the server; a diagnostic has
+    // no heartbeat to be handed anything by, and taking them on the command line is better than a
+    // second way to configure them -- a spelling can be tried here before it is saved anywhere.
+    var mine: Set<String> = []
+    if let i = args.firstIndex(of: "--me"), i + 1 < args.count {
+        mine = Set(args[i + 1].split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty })
+    }
     guard let view = slack.openView() else {
         print("cannot read Slack: it is not running, has no window, or Accessibility is not granted")
         exit(1)
     }
     print("Slack is showing: \(view)")
-    if view != SlackReader.activityTab && !anyView {
+    if mine.isEmpty {
         print("""
-        Only the Activity view is read. Every row there is somebody addressing you, whereas a
-        channel is full of messages that have nothing to do with you. Open Activity in Slack's left
-        rail, or pass --any-view to see what would be read from the view that is open.
+        No names to match, so nothing is treated as yours and no questions of yours can be read --
+        only the Activity view's asks. Pass --me "Your Slack Name" to try a spelling. The helper
+        gets this list from the server: Settings, the spellings of your own name, the same list a
+        tracker import matches an Owner column against.
         """)
-        exit(0)
     }
-    let observations = slack.read(requireActivity: !anyView) ?? []
+    let observations = slack.read(mine: mine) ?? []
     print("\(observations.count) message(s) readable (Slack renders a viewport, not a feed)")
     for o in observations.prefix(10) {
-        print("  \(o.at)  \(o.actorName ?? "?")  \(o.context ?? o.externalId)  \(o.text.prefix(60))")
+        let who = o.kind == "sent" ? "you asked" : (o.actorName ?? "?")
+        let answered = o.meta?["answeredAt"] != nil ? " [answered]" : ""
+        print("  \(o.at)  \(who)\(answered)  \(o.context ?? o.externalId)  \(o.text.prefix(60))")
+    }
+    // The names Slack is putting on these rows, which is the only way to see that the list of my
+    // own spellings does not contain the one it uses. That mismatch is silent otherwise: the reader
+    // works perfectly and reports nothing, forever.
+    if !slack.sendersSeen.isEmpty {
+        let names = slack.sendersSeen.sorted()
+        print("names on the messages here: \(names.joined(separator: ", "))")
+        if !names.contains(where: { mine.contains($0.lowercased()) }) {
+            print("none of those match \(mine.isEmpty ? "anything (no names given)" : mine.sorted().joined(separator: ", "))"
+                + " -- whichever is you belongs in Settings, spelled exactly as it reads above")
+        }
     }
     if !slack.skipped.isEmpty {
         // Not an error. Slack puts kinds in this view that have never been seen against a real
@@ -130,7 +151,42 @@ if args.contains("--slack-self-check") {
           SlackReader.timestamp(domId: "reaction-C0A1B2C3D-1794429455.100200") == nil else {
         log("FAIL: an unknown row kind was not held back"); exit(1)
     }
-    print("slack self-check ok: \(expected.count) rows across 2 schemes, \(furniture.count) non-messages, 1 unknown kind held back")
+    // The other half: which rows in a conversation are mine, which of mine are still hanging, and
+    // whose words an unnamed row belongs to. All three fail silently, and the last one fails in the
+    // expensive direction -- somebody else's ask filed as a question of mine disappears from the
+    // part of the desk that owes them a reply.
+    typealias M = SlackReader.Message
+    let me: Set<String> = ["avinash", "avinash vundyala"]
+    let conversation = SlackReader.carrySenders([
+        M(ts: "1794429455.100000", channel: "C1", sender: "Avinash Vundyala", text: "did the deploy go out?", url: nil, context: nil),
+        // Slack omits the sender on a run, so this one is mine too -- and it supersedes the above.
+        M(ts: "1794429460.100000", channel: "C1", sender: nil, text: "or is it still queued?", url: nil, context: nil),
+        M(ts: "1794429470.100000", channel: "C1", sender: "Avinash Vundyala", text: "thanks, all clear", url: nil, context: nil),
+        // A different conversation: an unnamed row here must NOT inherit my name.
+        M(ts: "1794429480.100000", channel: "C2", sender: nil, text: "can you confirm the Q4 numbers?", url: nil, context: nil),
+        M(ts: "1794429490.100000", channel: "C3", sender: "Avinash", text: "any update on the creds?", url: nil, context: nil),
+        M(ts: "1794429495.100000", channel: "C4", sender: "Priya Raman", text: "are we still on for Friday?", url: nil, context: nil),
+    ])
+    guard conversation[1].sender == "Avinash Vundyala", conversation[3].sender == nil else {
+        log("FAIL: the sender carried across a conversation boundary"); exit(1)
+    }
+    let questions = SlackReader.ownQuestions(conversation, mine: me)
+    // "thanks, all clear" asked nothing, and C2's unnamed row and C4's Priya are not mine.
+    let asked = questions.map { "\($0.0.channel)/\($0.0.ts)" }.sorted()
+    guard asked == ["C1/1794429455.100000", "C1/1794429460.100000", "C3/1794429490.100000"] else {
+        log("FAIL: my own questions read as \(asked)"); exit(1)
+    }
+    // Only the newest message in a conversation can be left hanging. Both of C1's questions have
+    // something after them -- the second one my own "thanks, all clear", which is me saying I
+    // stopped waiting -- so C3's, the last thing said there, is the only one owed an answer.
+    let hanging = questions.filter { $0.1 == nil }.map { "\($0.0.channel)/\($0.0.ts)" }
+    guard hanging == ["C3/1794429490.100000"] else {
+        log("FAIL: still hanging read as \(hanging), wanted [C3/1794429490.100000]"); exit(1)
+    }
+    guard SlackReader.ownQuestions(conversation, mine: []).isEmpty else {
+        log("FAIL: with no name to match, something was still claimed as mine"); exit(1)
+    }
+    print("slack self-check ok: \(expected.count) rows across 2 schemes, \(furniture.count) non-messages, 1 unknown kind held back, \(asked.count) of \(conversation.count) conversation rows mine, \(hanging.count) still hanging")
     exit(0)
 }
 
@@ -156,6 +212,9 @@ calendar.requestAccess()
 
 var buffer: [Data] = []
 var exclusions = HeartbeatResponse.Exclusions(apps: [], domains: [])
+/// The spellings of my own name, lowercased, as the server knows them. Empty until the first
+/// heartbeat comes back, which is the right default: nothing is claimed as mine on a guess.
+var identities: Set<String> = []
 var paused = false
 var lastCalendar = Date.distantPast
 var lastRetry = Date.distantPast
@@ -187,6 +246,7 @@ func flush() {
         if status == 200, let r = try? JSONDecoder().decode(HeartbeatResponse.self, from: body) {
             exclusions = r.exclusions
             paused = r.paused
+            identities = Set((r.identities ?? []).map { $0.lowercased() })
         } else if status == 401 {
             log("server rejected the token (401)")
         }
@@ -246,7 +306,7 @@ func tick() {
 /// are: an observation is a durable fact the server upserts on `(source, externalId)`, so the next
 /// pass re-reads and re-posts the same rows at no cost, and a missed post loses nothing.
 func postSlack() {
-    guard let observations = slack.read(), !observations.isEmpty else { return }
+    guard let observations = slack.read(mine: identities), !observations.isEmpty else { return }
     struct Body: Encodable { var observations: [Observation] }
     // The server caps a batch at 500. A rendered viewport is nowhere near that, so this only ever
     // guards against a surprise rather than paging through one.
