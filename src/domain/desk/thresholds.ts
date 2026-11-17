@@ -24,6 +24,10 @@ const DEFAULTS = {
   "desk.owedWaitDays": 2,
   /** Hours an outside ask sits before it is a backlog item rather than a live conversation. */
   "desk.askWaitHours": 4,
+  /** Hours my own question goes unanswered before chasing it is reasonable. Six times the inbound
+   * floor on purpose: I owe a reply the same morning, and somebody else gets a working day
+   * before I am the one who has to do something about it. */
+  "desk.replyWaitHours": 24,
   /** Days past its due date before a task is late rather than being finished today. One: a date
    * that passed yesterday has already passed, and pretending otherwise is how eight of them
    * accumulated unnoticed. */

@@ -1,4 +1,4 @@
-import { and, isNull, ne } from "drizzle-orm";
+import { and, isNull, notInArray } from "drizzle-orm";
 import { observations } from "@/db/schema";
 import { threshold } from "../thresholds";
 import type { Generator } from "../types";
@@ -9,7 +9,7 @@ import type { Generator } from "../types";
 const ASK_CAP = 20;
 
 /** Trim a message to something readable on one line without cutting mid-word. */
-function oneLine(text: string, max = 90): string {
+export function oneLine(text: string, max = 90): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;
   const cut = flat.slice(0, max);
@@ -38,10 +38,13 @@ export const askUnanswered: Generator = (db, now) => {
   // twenty `@channel` announcements would otherwise fill it and starve every real ask behind them.
   // `kind` is settled at ingest (classifyKind) precisely so this still holds once the text's TTL
   // has dropped the words it was judged on.
+  //
+  // `sent` is mine, not an ask of anybody's -- it belongs to `reply_awaited`, and left in here it
+  // would put my own question on the board as something I owe a reply to.
   const rows = db
     .select()
     .from(observations)
-    .where(and(isNull(observations.taskId), ne(observations.kind, "broadcast")))
+    .where(and(isNull(observations.taskId), notInArray(observations.kind, ["broadcast", "sent"])))
     .orderBy(observations.at)
     .limit(ASK_CAP)
     .all();

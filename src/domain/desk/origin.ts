@@ -86,6 +86,12 @@ export function originOf(db: DB, kind: ProposalKind, payload: Record<string, unk
       return { label, href: slackAppLink(str(payload.url)) };
     }
 
+    case "reply_awaited": {
+      // Where I said it, which is where I would go to say it again.
+      const label = str(payload.context) ?? "Slack";
+      return { label, href: slackAppLink(str(payload.url)) };
+    }
+
     case "capture_unfiled": {
       const id = payload.itemId;
       return typeof id === "number" ? { label: "Inbox", href: `/items/${id}` } : null;

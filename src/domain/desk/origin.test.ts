@@ -83,6 +83,19 @@ describe("originOf", () => {
     expect(originOf(t.db, "ask_unanswered", {})).toEqual({ label: "Slack", href: null });
   });
 
+  it("sends a question of mine to the same place, the channel I asked in", () => {
+    t = makeTestDb();
+    expect(
+      originOf(t.db, "reply_awaited", {
+        context: "#project-atlas",
+        url: "https://app.slack.com/client/T0H7I8J9K/C0A1B2C3D/p1794429455856259",
+      }),
+    ).toEqual({ label: "#project-atlas", href: "slack://channel?id=C0A1B2C3D&message=1794429455.856259&team=T0H7I8J9K" });
+    // No actor to fall back on: the actor is me, and "Avinash" is not a useful label on my own
+    // board.
+    expect(originOf(t.db, "reply_awaited", {})).toEqual({ label: "Slack", href: null });
+  });
+
   it("opens the captured item itself for an unfiled capture", () => {
     t = makeTestDb();
     expect(originOf(t.db, "capture_unfiled", { itemId: 7 })).toEqual({ label: "Inbox", href: "/items/7" });

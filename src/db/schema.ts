@@ -664,8 +664,10 @@ export const observations = sqliteTable(
      * is what makes re-running one an update rather than a pile of duplicates. */
     externalId: text("external_id").notNull(),
     at: text("at").notNull(),
-    /** mention | dm | thread_reply -- left as free text, because the next adaptor will have its
-     * own words for the same idea and an enum here would mean a migration per tool. */
+    /** mention | dm | thread_reply | sent -- left as free text, because the next adaptor will
+     * have its own words for the same idea and an enum here would mean a migration per tool.
+     * `sent` is one of mine, awaiting a reply rather than owing one; `broadcast` is settled here
+     * at ingest rather than by the adaptor. */
     kind: text("kind").notNull(),
     actorHandle: text("actor_handle"),
     actorName: text("actor_name"),

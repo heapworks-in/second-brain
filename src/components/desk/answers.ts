@@ -24,6 +24,7 @@ export const PRIMARY_LABELS: Record<ProposalKind, (count: number) => string> = {
   commitment_unbooked: () => "Book it",
   commitment_owed: () => "Plan it for today",
   ask_unanswered: () => "Owe it back",
+  reply_awaited: () => "Chase it",
 };
 
 /** Said once, under the evidence, when the kind has been refused enough to be worth admitting
@@ -62,6 +63,13 @@ export const SECTIONS = [
     title: "Past its date",
     /** A date you set yourself and let go by. */
     kinds: ["task_overdue", "prediction_due", "decision_stale"],
+  },
+  {
+    id: "chasing",
+    title: "You are waiting on someone",
+    /** Below the dates because nothing here has been missed yet, and above the plan's own
+     * disagreements because this one is a thing to do rather than a thing to notice. */
+    kinds: ["reply_awaited"],
   },
   {
     id: "wrong",

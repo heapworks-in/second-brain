@@ -53,6 +53,10 @@ const DEFAULT_WEIGHTS: Record<ProposalKind, number> = {
   // commitment it turns into, because that one has at least been written down.
   ask_unanswered: 0.8,
   prediction_due: 0.8,
+  // My own question, unanswered. Below the ask it mirrors because the cost of this one lands on
+  // my week rather than somebody else's -- and because a chase is cheap, which is the argument
+  // for doing it, not for doing it first.
+  reply_awaited: 0.75,
   // A date the person set themselves and let pass. Above an overrun because an estimate being
   // wrong is a guess that missed, while this is a commitment that did.
   task_overdue: 0.75,

@@ -111,6 +111,7 @@ export const PROPOSAL_KINDS = [
   "commitment_unbooked",
   "commitment_owed",
   "ask_unanswered",
+  "reply_awaited",
 ] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 

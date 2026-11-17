@@ -484,3 +484,79 @@ describe("ask_unanswered", () => {
     expect(() => decideProposal(t.db, second.id, "accept", NOW)).toThrow(/already a task/);
   });
 });
+
+describe("reply_awaited", () => {
+  /** A message of mine plus the open proposal the generator would have made for it. */
+  function aQuestion() {
+    ingestObservations(
+      t.db,
+      [
+        {
+          source: "slack",
+          externalId: "T1/C1/1731600000.000200",
+          at: "2026-10-20T09:00:00.000Z",
+          kind: "sent",
+          actorHandle: "avinash",
+          actorName: "Avinash Vundyala",
+          text: "any update on the staging credentials?",
+          url: "https://app.slack.com/client/T1/C1/p1",
+          context: "#project-atlas",
+        },
+      ],
+      NOW,
+    );
+    const row = t.db.select().from(observations).all()[0];
+    return {
+      row,
+      proposal: open({
+        kind: "reply_awaited",
+        source: "observation",
+        sourceRef: `observation:${row.id}`,
+        payload: { observationId: row.id, askedAt: row.at, context: row.context, url: row.url, title: "any update on the staging credentials?" },
+      }),
+    };
+  }
+
+  it("turns a question nobody answered into a follow-up of my own", () => {
+    t = makeTestDb();
+    const { row, proposal } = aQuestion();
+    const decided = decideProposal(t.db, proposal.id, "accept", NOW);
+    expect(decided.label).toBe("Now on your list");
+    const task = listTasks(t.db, { status: "open" })[0];
+    expect(task.title).toBe("Follow up: any update on the staging credentials?");
+    // Mine, not theirs. A task owned by the person I am waiting on is excluded by `MINE` from
+    // every list I actually read, which would make accepting the card the same as dismissing it.
+    expect(task.ownerPersonId).toBeNull();
+    expect(task.notes).toContain("https://app.slack.com/client/T1/C1/p1");
+    expect(t.db.select().from(observations).where(eq(observations.id, row.id)).get()!.taskId).toBe(task.id);
+  });
+
+  it("invents nobody: waiting on a reply does not make a person record", () => {
+    t = makeTestDb();
+    const { proposal } = aQuestion();
+    decideProposal(t.db, proposal.id, "accept", NOW);
+    expect(listPeople(t.db)).toHaveLength(0);
+  });
+
+  it("undo removes the task and the link", () => {
+    t = makeTestDb();
+    const { row, proposal } = aQuestion();
+    decideProposal(t.db, proposal.id, "accept", NOW);
+    undoProposal(t.db, proposal.id);
+    expect(listTasks(t.db, { status: "open" })).toHaveLength(0);
+    expect(t.db.select().from(observations).where(eq(observations.id, row.id)).get()!.taskId).toBeNull();
+  });
+
+  it("refuses a question that is already a follow-up", () => {
+    t = makeTestDb();
+    const { row, proposal } = aQuestion();
+    decideProposal(t.db, proposal.id, "accept", NOW);
+    const second = open({
+      kind: "reply_awaited",
+      source: "observation",
+      sourceRef: "observation:999",
+      payload: { observationId: row.id, askedAt: row.at, url: row.url, title: "again" },
+    });
+    expect(() => decideProposal(t.db, second.id, "accept", NOW)).toThrow(/already a task/);
+  });
+});

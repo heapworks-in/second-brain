@@ -241,6 +241,29 @@ function commit(db: DB, proposal: Proposal, now: Date): { label: string; href?: 
         },
       };
     }
+    case "reply_awaited": {
+      const p = payloadOf<{ observationId: number; title: string; url: string | null }>(proposal);
+      const observation = getObservation(db, p.observationId);
+      if (!observation) throw new DeskError("That message is no longer here", 404);
+      if (observation.taskId !== null) throw new DeskError("That follow-up is already a task", 409);
+      // Mine, and deliberately not a task owned by the person I am waiting on. Chasing somebody
+      // is my work: it has to land somewhere I will see it, be bookable, and be plannable, and a
+      // task owned by them is none of those -- `MINE` excludes it from every list I read. No
+      // person record is invented either, for the same reason: nobody is waiting on me here.
+      const task = createTask(db, {
+        title: `Follow up: ${p.title}`,
+        notes: p.url ? `You asked on ${observation.source}: ${p.url}` : undefined,
+      });
+      linkObservationToTask(db, observation.id, task.id);
+      return {
+        label: "Now on your list",
+        href: `/tasks?task=${task.id}`,
+        undo: () => {
+          linkObservationToTask(db, observation.id, null);
+          deleteTask(db, task.id);
+        },
+      };
+    }
   }
 }
 
