@@ -21,7 +21,7 @@ function asked(over: Record<string, unknown> = {}) {
         at: "2026-11-01T09:00:00.000Z",
         kind: "sent",
         actorHandle: "avinash",
-        actorName: "Avinash Vundyala",
+        actorName: "Avinash",
         text: "any update on the staging credentials?",
         context: "#project-atlas",
         ...over,

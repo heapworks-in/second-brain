@@ -497,7 +497,7 @@ describe("reply_awaited", () => {
           at: "2026-10-20T09:00:00.000Z",
           kind: "sent",
           actorHandle: "avinash",
-          actorName: "Avinash Vundyala",
+          actorName: "Avinash",
           text: "any update on the staging credentials?",
           url: "https://app.slack.com/client/T1/C1/p1",
           context: "#project-atlas",
