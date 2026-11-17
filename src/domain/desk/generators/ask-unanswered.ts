@@ -68,6 +68,9 @@ export const askUnanswered: Generator = (db, now) => {
           actorHandle: row.actorHandle,
           actorName: row.actorName,
           askedAt: row.at,
+          // The channel, so the row's origin names where it was said rather than falling back to
+          // who said it -- `originOf` has always read this key and nothing has ever written it.
+          context: row.context,
           url: row.url,
           title: what,
         },

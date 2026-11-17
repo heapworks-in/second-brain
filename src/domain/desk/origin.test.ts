@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { containers, tasks } from "@/db/schema";
-import { originOf } from "./origin";
+import { originOf, slackAppLink } from "./origin";
 
 let t: TestDb;
 afterEach(() => t?.cleanup());
@@ -65,6 +65,18 @@ describe("originOf", () => {
     ).toEqual({ label: "#project-atlas", href: "https://app.slack.com/client/T1/C1/p1" });
   });
 
+  it("sends a Slack ask to the Slack app, not to a browser inside this one", () => {
+    // An https permalink navigates whatever window is showing it -- in the desktop shell, this
+    // app's own. The deep link is what macOS hands to the installed Slack.
+    t = makeTestDb();
+    expect(
+      originOf(t.db, "ask_unanswered", {
+        context: "#project-atlas",
+        url: "https://app.slack.com/client/T0H7I8J9K/C0A1B2C3D/p1794429455856259",
+      }),
+    ).toEqual({ label: "#project-atlas", href: "slack://channel?id=C0A1B2C3D&message=1794429455.856259&team=T0H7I8J9K" });
+  });
+
   it("falls back to who asked when Slack gave no channel", () => {
     t = makeTestDb();
     expect(originOf(t.db, "ask_unanswered", { actorName: "Priya Raman" })).toEqual({ label: "Priya Raman", href: null });
@@ -112,5 +124,29 @@ describe("originOf", () => {
     t = makeTestDb();
     expect(originOf(t.db, "task_overdue", { containerId: "not-a-number" })).toBeNull();
     expect(originOf(t.db, "commitment_owed", { personName: "   " })).toBeNull();
+  });
+});
+
+describe("slackAppLink", () => {
+  it("rebuilds the timestamp a permalink flattened", () => {
+    // `p1794429455856259` is one run of digits; Slack wants `1794429455.856259` back.
+    expect(slackAppLink("https://app.slack.com/client/T0H7I8J9K/C0A1B2C3D/p1794429455856259")).toBe(
+      "slack://channel?id=C0A1B2C3D&message=1794429455.856259&team=T0H7I8J9K",
+    );
+  });
+
+  it("handles a channel row's archives link, which carries no team", () => {
+    expect(slackAppLink("https://acme.slack.com/archives/C0A1B2C3D/p1794429455856259")).toBe(
+      "slack://channel?id=C0A1B2C3D&message=1794429455.856259",
+    );
+  });
+
+  it("hands back anything it does not recognise rather than mangling it", () => {
+    // A url from an adaptor this file has never seen must still open, just not as Slack.
+    expect(slackAppLink("https://example.com/thread/9")).toBe("https://example.com/thread/9");
+    expect(slackAppLink("https://app.slack.com/client/T0H7I8J9K/activity-inbox")).toBe(
+      "https://app.slack.com/client/T0H7I8J9K/activity-inbox",
+    );
+    expect(slackAppLink(null)).toBeNull();
   });
 });

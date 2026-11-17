@@ -90,6 +90,25 @@ describe("DeskPage", () => {
     expect(screen.getByRole("link", { name: /Atlas/ }).getAttribute("href")).toBe("/c/atlas");
   });
 
+  it("hands an outside origin to the system instead of following it in the window", async () => {
+    // The bug this covers: a Slack permalink rendered as a link navigated the desktop app's own
+    // window to Slack's web client. Nothing outside this app may be followed in the page.
+    const calls = stubDesk(desk());
+    render(
+      <DeskPage
+        initial={desk({
+          proposals: [card({ origin: { label: "#project-atlas", href: "slack://channel?id=C1&message=1.2" } })],
+          open: 1,
+        })}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: /project-atlas/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /project-atlas/ }));
+    await waitFor(() =>
+      expect(calls.at(-1)).toMatchObject({ url: "/api/open", method: "POST", body: { url: "slack://channel?id=C1&message=1.2" } }),
+    );
+  });
+
   it("takes the answered row off the board and counts the sitting", async () => {
     // Two different kinds, so each row's button names its own consequence -- which is the point
     // of the labels, and on a board it is also what keeps them tellable apart.

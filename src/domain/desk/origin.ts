@@ -37,6 +37,29 @@ function str(value: unknown): string | null {
 }
 
 /**
+ * A Slack permalink is an `https://` URL, and following one navigates whatever is showing it --
+ * in the desktop shell that is the app's own window, which is how clicking a row turned Second
+ * Brain into a Slack browser. `slack://` is the scheme macOS routes to the installed app, where
+ * the message already is and where answering it is possible.
+ *
+ * Both shapes the reader produces are handled: an Activity row's rebuilt
+ * `app.slack.com/client/<team>/<channel>/p<ts>` and a channel row's own
+ * `<workspace>.slack.com/archives/<channel>/p<ts>`, which carries no team id. Slack resolves a
+ * message without one; anything unrecognised is handed back untouched rather than mangled.
+ */
+const PERMALINK = /^https:\/\/(?:app\.slack\.com\/client\/(T[A-Z0-9]+)|[a-z0-9-]+\.slack\.com)\/(?:archives\/)?([CDG][A-Z0-9]+)\/p(\d{10})(\d{6})/i;
+
+export function slackAppLink(url: string | null): string | null {
+  if (url === null) return null;
+  const m = PERMALINK.exec(url);
+  if (!m) return url;
+  const [, team, channel, seconds, micro] = m;
+  const query = new URLSearchParams({ id: channel, message: `${seconds}.${micro}` });
+  if (team) query.set("team", team);
+  return `slack://channel?${query}`;
+}
+
+/**
  * One switch, per kind, because only the kind knows which of its payload keys names the thing.
  * A kind with nothing worth linking to returns a label and a null href rather than a dead link.
  */
@@ -60,7 +83,7 @@ export function originOf(db: DB, kind: ProposalKind, payload: Record<string, unk
     case "ask_unanswered": {
       // The permalink back into Slack, which is the only place the message itself exists.
       const label = str(payload.context) ?? str(payload.actorName) ?? "Slack";
-      return { label, href: str(payload.url) };
+      return { label, href: slackAppLink(str(payload.url)) };
     }
 
     case "capture_unfiled": {

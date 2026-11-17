@@ -8,6 +8,20 @@ import type { DeskDTO, ProposalDTO } from "@/lib/dto";
 import { Button } from "../ui";
 import { PRIMARY_LABELS, dismissNote, groupIntoSections } from "./answers";
 
+/** An origin that is not a path into this app -- a Slack permalink, a deep link into another app. */
+function external(href: string): boolean {
+  return !href.startsWith("/");
+}
+
+/** Let macOS route it: `slack://` reaches the installed Slack, `https://` the default browser. */
+async function openOutside(href: string): Promise<void> {
+  await fetch("/api/open", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: href }),
+  });
+}
+
 /** How long the line offering to take an answer back stays on screen. */
 const UNDO_MS = 8000;
 
@@ -299,13 +313,28 @@ function Row({
         <span className="flex-1" />
         {card.origin &&
           (card.origin.href ? (
-            <Link
-              href={card.origin.href}
-              className="focus-ring rounded-sm flex items-center gap-1 text-[11.5px] text-fg-faint hover:text-fg max-w-[14rem]"
-            >
-              <span className="truncate">{card.origin.label}</span>
-              <ArrowUpRight className="w-3 h-3 shrink-0" aria-hidden />
-            </Link>
+            // A row's origin can be outside the app -- a Slack message lives in Slack. Following
+            // one as a link navigates the window showing it, which in the desktop shell is the
+            // app's own: clicking a Slack row replaced Second Brain with Slack's web client. An
+            // external one is handed to macOS instead, which routes `slack://` to the real app.
+            external(card.origin.href) ? (
+              <button
+                type="button"
+                onClick={() => void openOutside(card.origin!.href!)}
+                className="focus-ring rounded-sm flex items-center gap-1 text-[11.5px] text-fg-faint hover:text-fg max-w-[14rem]"
+              >
+                <span className="truncate">{card.origin.label}</span>
+                <ArrowUpRight className="w-3 h-3 shrink-0" aria-hidden />
+              </button>
+            ) : (
+              <Link
+                href={card.origin.href}
+                className="focus-ring rounded-sm flex items-center gap-1 text-[11.5px] text-fg-faint hover:text-fg max-w-[14rem]"
+              >
+                <span className="truncate">{card.origin.label}</span>
+                <ArrowUpRight className="w-3 h-3 shrink-0" aria-hidden />
+              </Link>
+            )
           ) : (
             <span className="text-[11.5px] text-fg-faint max-w-[14rem] truncate">{card.origin.label}</span>
           ))}
