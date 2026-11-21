@@ -74,7 +74,10 @@ export async function briefProposals(
     // Recorded under "brief" so the ranker learns from the path that actually gets used, without
     // these turning up in the list of questions a person asked and the corpus could not answer.
     recordAsk(db, card.title, answer, answer.sources.map((s) => ({ itemId: s.itemId, chunkId: s.chunkId })), now, "brief");
-    const best = answer.sources[0];
+    // What the model used, or -- with no model to read them -- the best thing retrieval found.
+    // Never a source the model was shown and declined to use: that is the one case where a brief
+    // would attach something confidently irrelevant to a card.
+    const best = answer.cited[0] ?? (deps.chat ? undefined : answer.sources[0]);
     db.insert(proposalBriefs)
       .values({
         proposalId: card.id,

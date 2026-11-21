@@ -25,8 +25,21 @@ export interface Source {
 export interface Answer {
   /** Prose, or the empty string when the corpus had nothing to say. */
   text: string;
-  /** What it was built from, in the order the model was shown them. */
+  /** What the model was shown, in that order. Worth handing back even when it refused: those are
+   * the search results, and a caller can display them. */
   sources: Source[];
+  /**
+   * What the model said it actually drew on. Empty whenever there is no answer.
+   *
+   * Separate from `sources` because conflating the two corrupted the feedback loop, and did it
+   * in the exact way the loop is supposed to guard against. One field meaning "shown" on a
+   * refusal and "used" on success made every refusal credit all six irrelevant documents
+   * retrieval had turned up -- so the ranker was being taught that whatever retrieval already
+   * favours is good, which is a loop that learns its own prior and converges on its first guess.
+   * Caught by reading the live table, not by a test: every test asserted on `sources`, which was
+   * populated either way.
+   */
+  cited: Source[];
   /** Why there is no answer, when there is none: no model, nothing retrieved, nothing grounded. */
   unavailable?: string;
 }
@@ -90,11 +103,11 @@ export async function answerFromKnowledge(
   now = new Date(),
 ): Promise<Answer> {
   const asked = question.trim();
-  if (!asked) return { text: "", sources: [], unavailable: "Nothing was asked" };
+  if (!asked) return { text: "", sources: [], cited: [], unavailable: "Nothing was asked" };
 
   const hits = await search(db, deps.embed, asked, {}, RETRIEVE);
   if (hits.length === 0) {
-    return { text: "", sources: [], unavailable: "Nothing in the knowledge base matched that" };
+    return { text: "", sources: [], cited: [], unavailable: "Nothing in the knowledge base matched that" };
   }
 
   const ranked = hits
@@ -114,7 +127,7 @@ export async function answerFromKnowledge(
   if (!deps.chat) {
     // The sources are worth handing back even with no model to read them: this is then the search
     // results, which is strictly more than nothing and the same shape the caller already handles.
-    return { text: "", sources, unavailable: "No local summary model, so these are the sources only" };
+    return { text: "", sources, cited: [], unavailable: "No local summary model, so these are the sources only" };
   }
 
   const grounded = Grounded.parse(
@@ -133,11 +146,11 @@ export async function answerFromKnowledge(
   );
 
   const text = grounded.answer.trim();
-  if (!text) return { text: "", sources, unavailable: "The sources do not answer that" };
+  if (!text) return { text: "", sources, cited: [], unavailable: "The sources do not answer that" };
 
   // Only what it said it used, and only numbers that exist. A model that cites [7] of six sources
   // must not be able to credit a source that was never shown to it -- the feedback loop reads
   // these, so a bogus citation would teach the ranker something that never happened.
-  const used = [...new Set(grounded.used)].filter((n) => n >= 1 && n <= sources.length).map((n) => sources[n - 1]);
-  return { text, sources: used.length > 0 ? used : sources };
+  const cited = [...new Set(grounded.used)].filter((n) => n >= 1 && n <= sources.length).map((n) => sources[n - 1]);
+  return { text, sources, cited };
 }

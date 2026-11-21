@@ -47,7 +47,9 @@ export function recordAsk(
   now = new Date(),
   source: "ask" | "brief" = "ask",
 ): Recorded {
-  const cited = new Set(answer.sources.map((s) => s.chunkId));
+  // `cited`, never `sources`: a refusal shows six documents and uses none of them, and crediting
+  // what was merely shown is how a feedback loop learns the opinion retrieval already had.
+  const cited = new Set(answer.cited.map((s) => s.chunkId));
   return db.transaction(() => {
     const entry = db
       .insert(askLog)

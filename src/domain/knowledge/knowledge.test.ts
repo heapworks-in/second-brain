@@ -35,8 +35,8 @@ describe("answerFromKnowledge", () => {
       NOW,
     );
     expect(out.text).toContain("frozen until the audit");
-    expect(out.sources).toHaveLength(1);
-    expect(out.sources[0].title).toBe("Migration plan");
+    expect(out.cited).toHaveLength(1);
+    expect(out.cited[0].title).toBe("Migration plan");
   });
 
   /* The refusal path is the feature, not the fallback. A personal corpus is a few dozen documents,
@@ -52,8 +52,10 @@ describe("answerFromKnowledge", () => {
     );
     expect(out.text).toBe("");
     expect(out.unavailable).toBe("The sources do not answer that");
-    // The sources still come back: that is the search result, and strictly more than nothing.
+    // The sources still come back -- that is the search result, and strictly more than nothing --
+    // but nothing is credited, which is the distinction the ranker depends on.
     expect(out.sources.length).toBeGreaterThan(0);
+    expect(out.cited).toEqual([]);
   });
 
   it("says so when nothing matched at all, without calling the model", async () => {
@@ -83,7 +85,7 @@ describe("answerFromKnowledge", () => {
       "schema changes",
       NOW,
     );
-    expect(out.sources.every((s) => s.itemId > 0)).toBe(true);
+    expect(out.cited).toEqual([]);
     expect(out.text).toBe("Something [7].");
   });
 });
@@ -105,6 +107,18 @@ describe("ask", () => {
     expect(sources.filter((s) => s.cited === 1)).toHaveLength(1);
   });
 
+  /* The bug the live data showed, and the one this whole file is supposed to prevent. A refusal
+   * shows six irrelevant documents and uses none of them; crediting what was merely shown taught
+   * the ranker that whatever retrieval already favours is good. Every earlier test asserted on
+   * `sources`, which was populated either way, so none of them caught it. */
+  it("credits nothing at all when it refused to answer", async () => {
+    corpus();
+    await ask(t.db, { embed: noEmbed, chat: chat({ answer: "", used: [] }) }, "schema changes", NOW);
+    const sources = t.db.select().from(askSources).all();
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.filter((s) => s.cited === 1)).toEqual([]);
+  });
+
   /* The most useful thing in the log: a run of questions the corpus could not answer is a
    * self-generated list of the documents that are missing. */
   it("keeps the questions it could not answer", async () => {
@@ -120,7 +134,11 @@ describe("sourceWeight", () => {
       const { askId } = recordAsk(
         t.db,
         `q${i}`,
-        { text: "an answer", sources: opts.cited ? [{ itemId, chunkId: 1, title: "", type: "note", excerpt: "", score: 1 }] : [] },
+        {
+          text: "an answer",
+          sources: [{ itemId, chunkId: 1, title: "", type: "note", excerpt: "", score: 1 }],
+          cited: opts.cited ? [{ itemId, chunkId: 1, title: "", type: "note", excerpt: "", score: 1 }] : [],
+        },
         [{ itemId, chunkId: 1 }],
         NOW,
       );
