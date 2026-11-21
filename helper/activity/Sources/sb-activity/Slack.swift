@@ -21,10 +21,33 @@ struct Observation: Encodable {
     var text: String
     var url: String?
     var context: String?
-    /// Free-form, and carries one fact today: `answeredAt`, when a message of mine was followed by
-    /// another in the same conversation. The server cannot work that out -- it never sees the
-    /// conversation, only the rows worth keeping out of it.
+    /// Free-form. Carries nothing today: whether anybody has replied used to be reported here, per
+    /// message, and is now derived server-side from the conversation report below -- which is both
+    /// less to send and a better answer, because a report is only ever about what was on screen.
     var meta: [String: String]?
+}
+
+/// What a pass could see of a conversation's tail, and the only thing reported about the messages
+/// in it that are not mine.
+///
+/// Two timestamps, not a transcript. `mineAt` is the last time I said anything here and `theirsAt`
+/// the last time anybody else did, and between them the server can answer every "is this still
+/// waiting?" without a single word of somebody else's message ever leaving Slack. A reader that
+/// parses a whole channel to report two numbers is reporting strictly less than one that reports
+/// the messages -- and the old per-message `answeredAt` it replaces was the weaker fact anyway:
+/// "something came after mine", true of whatever happened to be drawn and nothing more.
+struct ConversationReport: Encodable {
+    var source: String
+    var externalId: String
+    var name: String?
+    var mineAt: String?
+    var theirsAt: String?
+}
+
+/// One pass: the messages worth keeping, and what was visible of the places they were said.
+struct Reading: Encodable {
+    var observations: [Observation]
+    var conversations: [ConversationReport]
 }
 
 /// Reads Slack through Accessibility. Holds one piece of state -- whether Chromium has been asked
@@ -127,7 +150,7 @@ final class SlackReader {
     /// same list a tracker import matches an Owner column against). Empty means nothing is claimed
     /// as yours: without it, somebody else's message filed as one of mine would vanish from the
     /// half of the desk that owes them a reply, which is worse than this feature not working.
-    func read(mine: Set<String> = []) -> [Observation]? {
+    func read(mine: Set<String> = []) -> Reading? {
         guard AXIsProcessTrusted(), let app = Self.slackApp() else { return nil }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         ask(axApp)
@@ -163,14 +186,16 @@ final class SlackReader {
         // A channel row carries no label naming its own channel -- the whole view is that channel,
         // so the name is in the window title instead.
         let here = Self.viewName(window)
-        for (message, answeredAt) in Self.ownQuestions(conversation, mine: mine) {
+        for message in Self.ownQuestions(conversation, mine: mine) {
             var message = message
             if message.context == nil { message.context = here }
-            guard let o = observation(message, kind: "sent", answeredAt: answeredAt),
-                  seen.insert(o.externalId).inserted else { continue }
+            guard let o = observation(message, kind: "sent"), seen.insert(o.externalId).inserted else { continue }
             out.append(o)
         }
-        return out
+        // Reported whether or not anything in this view was worth keeping. A channel full of other
+        // people talking produces no observations at all and still moves `theirsAt` forwards, which
+        // is exactly what expires the card for a question of mine they have finally got round to.
+        return Reading(observations: out, conversations: Self.tails(conversation, mine: mine, name: here))
     }
 
     /// Slack prints the sender once for a run of messages from one person, so a row with no name
@@ -193,44 +218,64 @@ final class SlackReader {
         return out
     }
 
-    /// Which of these are mine, still asking something, and whether anything came after each.
+    /// Which of these are mine and still asking something.
     ///
-    /// Anything later in the same conversation counts as an answer, including another message of my
-    /// own. So what can be left hanging is the newest message in a conversation and nothing else:
-    /// three questions in a row leave only the last, and a question I followed with "thanks, all
-    /// clear" is one I plainly stopped waiting on. It misses a question I buried under my own later
-    /// chatter, which is the right way round -- at most one card per conversation, and only when my
-    /// question is the last thing anybody said.
+    /// It no longer works out whether anything came after each one. That question is now answered
+    /// from the conversation's two timestamps, server-side, and the answer is strictly better:
+    /// a question of mine is hanging when it is the last thing *anybody* said here, which is what
+    /// `mineAt` and `theirsAt` together say. The old rule had to be re-derived from whatever was
+    /// on screen on every pass, so a scroll could make a reply un-arrive.
     ///
-    /// The tree is a viewport, so a message that is merely the last one *rendered* reads as
-    /// unanswered; the pass that renders what follows it corrects the row, because the server
-    /// upserts on `(source, externalId)`.
-    static func ownQuestions(_ rows: [Message], mine: Set<String>)
-        -> [(Message, String?)] {
+    /// The rules it encoded are unchanged and now fall out of those two numbers: three questions
+    /// in a row leave only the last (`mineAt` is the third), and a question I followed with
+    /// "thanks, all clear" is one I plainly stopped waiting on (`mineAt` is the thanks).
+    static func ownQuestions(_ rows: [Message], mine: Set<String>) -> [Message] {
         if mine.isEmpty { return [] }
-        var next: [String: Double] = [:]  // externalId -> the ts that followed it
-        var byChannel: [String: [Message]] = [:]
-        for row in rows { byChannel[row.channel, default: []].append(row) }
-        for (_, list) in byChannel {
-            let ordered = list.sorted { (Double($0.ts) ?? 0) < (Double($1.ts) ?? 0) }
-            for (i, row) in ordered.enumerated() where i + 1 < ordered.count {
-                next["\(row.channel)/\(row.ts)"] = Double(ordered[i + 1].ts) ?? 0
-            }
-        }
-        return rows.compactMap { row in
-            guard let sender = row.sender, mine.contains(sender.lowercased()) else { return nil }
+        return rows.filter { row in
+            guard let sender = row.sender, mine.contains(sender.lowercased()) else { return false }
             // Of my own messages, only the ones that asked for something. Everything else I type is
             // conversation, and a card a day after every "thanks" would bury the questions that are
             // genuinely hanging -- so the rest is not reported, and nothing keeps a copy of
             // everything I say in Slack. It misses "send me the creds when you can", which is the
-            // honest trade for that.
-            guard row.text.contains("?") else { return nil }
-            let after = next["\(row.channel)/\(row.ts)"]
-            return (row, after.map { isoString(from: $0) })
+            // honest trade for that; a model reads what does arrive and can still say it is not
+            // really an ask, but nothing downstream can recover a message never reported.
+            return row.text.contains("?")
         }
     }
 
-    private func observation(_ message: Message, kind: String, answeredAt: String? = nil) -> Observation? {
+    /// The tails of every conversation these rows came from.
+    ///
+    /// A row whose sender could not be read at all is counted as nobody's: attributing it would
+    /// mean guessing, and guessing wrong in the `mineAt` direction silently answers a question
+    /// nobody answered. `name` is only attached when the pass was looking at a single
+    /// conversation, because the window title names the view and not each row in it.
+    static func tails(_ rows: [Message], mine: Set<String>, name: String?) -> [ConversationReport] {
+        var byChannel: [String: (mine: Double?, theirs: Double?)] = [:]
+        for row in rows {
+            // Skipped before the conversation is created, not after: a view whose every sender was
+            // unreadable is a view nothing is known about, and reporting it would open a
+            // conversation whose two timestamps say nothing. Better no row than an empty one.
+            guard let seconds = Double(row.ts), let sender = row.sender?.lowercased() else { continue }
+            var tail = byChannel[row.channel] ?? (nil, nil)
+            if mine.contains(sender) {
+                tail.mine = max(tail.mine ?? seconds, seconds)
+            } else {
+                tail.theirs = max(tail.theirs ?? seconds, seconds)
+            }
+            byChannel[row.channel] = tail
+        }
+        let single = byChannel.count == 1 ? name : nil
+        return byChannel.map { channel, tail in
+            ConversationReport(
+                source: source,
+                externalId: channel,
+                name: single,
+                mineAt: tail.mine.map { isoString(from: $0) },
+                theirsAt: tail.theirs.map { isoString(from: $0) })
+        }
+    }
+
+    private func observation(_ message: Message, kind: String) -> Observation? {
         guard let seconds = Double(message.ts) else { return nil }
         return Observation(
             source: Self.source,
@@ -245,7 +290,7 @@ final class SlackReader {
             text: message.text,
             url: message.url,
             context: message.context,
-            meta: answeredAt.map { ["answeredAt": $0] })
+            meta: nil)
     }
 
     // MARK: - Attribute plumbing
@@ -511,5 +556,16 @@ final class SlackReader {
                                       withTemplate: "-")
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return slug.isEmpty ? nil : slug
+    }
+}
+
+extension ISO8601DateFormatter {
+    /// Seconds since the epoch from an ISO string with fractional seconds -- the inverse of what
+    /// the reader emits, for the self-check. A plain string comparison there would be asserting a
+    /// timezone rather than the rule.
+    static func parse(_ s: String) -> Double? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.date(from: s)?.timeIntervalSince1970
     }
 }

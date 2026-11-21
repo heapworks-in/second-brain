@@ -151,18 +151,30 @@ helper_build_date() {
 # Why `accessibility: missing` may be showing even though the switch looks on, and what to do.
 accessibility_advice() {
   local when; when="$(helper_build_date)"
-  printf '  Accessibility is bound to the exact build it was granted to: the helper is ad-hoc signed,
+  if codesign -dvvv "$HELPER_BIN" 2>&1 | grep -q "Signature=adhoc"; then
+    # The old situation, still reachable on a machine with no signing identity in its keychain.
+    printf '  Accessibility is bound to the exact build it was granted to, and this helper is ad-hoc
 '
-  printf '  so macOS pins the grant to that one file and a rebuild voids it -- while System Settings
+    printf '  signed -- so macOS pins the grant to that one file and a rebuild voids it, while System
 '
-  printf '  carries on showing the entry with its switch on.
+    printf '  Settings carries on showing the entry with its switch on.
 '
-  if [ -n "$when" ]; then
-    printf '  This helper was last rebuilt on %s; a grant given before then no longer applies.
+    if [ -n "$when" ]; then
+      printf '  This helper was last rebuilt on %s; a grant given before then no longer applies.
 ' "$when"
-  fi
-  printf '  Toggling it off and on reuses the same stale entry, so remove it and add it again:
+    fi
+    printf '  Toggling it off and on reuses the same stale entry, so remove it and add it again:
 '
+  else
+    printf '  This helper is signed with a stable identity, so the grant survives future rebuilds:
+'
+    printf '  macOS checks the signature rather than the exact bytes. Give it once and it holds.
+'
+    printf '  A grant given to an earlier ad-hoc build does not carry over, so if an entry for
+'
+    printf '  sb-activity is already listed, remove it first -- toggling reuses the stale one:
+'
+  fi
   printf '    System Settings > Privacy & Security > Accessibility
 '
   printf '    select sb-activity, press [-], then press [+] and choose:
@@ -194,11 +206,58 @@ accessibility_advice() {
 # `mv` within the same directory is a rename: the new file gets its own inode, anyone still
 # running the old one keeps a working copy of it, and no byte is ever written through a path that
 # something might be executing.
+# A stable code-signing identity, so that rebuilding a helper does not void its Accessibility
+# grant.
+#
+# macOS pins a TCC grant to the binary's *designated requirement*, and for an ad-hoc signature
+# that requirement IS the code hash:
+#
+#   designated => cdhash H"d10598adce942df8aee4bf98039f9d0788310781"
+#
+# One changed byte and the grant no longer applies, while System Settings carries on showing the
+# entry with its switch on -- which is the whole "re-grant Accessibility after every rebuild"
+# ritual. Signed with a real identity the requirement is the identifier and the certificate
+# instead:
+#
+#   designated => identifier "com.second-brain.activity" and anchor apple generic
+#                 and certificate leaf[subject.CN] = "Apple Development: ..."
+#
+# No code hash in it, so every later build satisfies the same requirement and the grant holds.
+# A Developer ID is preferred over an Apple Development certificate only because it does not
+# expire out from under a machine that is not signed into Xcode; either works. $SB_SIGN_IDENTITY
+# overrides the search, and with no identity at all the build stays ad-hoc as before -- the
+# helper still works, it just goes back to needing the ritual.
+signing_identity() {
+  if [ -n "${SB_SIGN_IDENTITY:-}" ]; then printf '%s' "$SB_SIGN_IDENTITY"; return 0; fi
+  security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/^[[:space:]]*[0-9][0-9]*)[[:space:]]*[0-9A-F]\{40\}[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' \
+    | awk '/^Developer ID Application/ { print; found = 1; exit } { if (!first) first = $0 } END { if (!found && first) print first }'
+}
+
+# Hardened runtime is deliberately not used: it is what notarisation wants, and it gates
+# capabilities (EventKit among them) that this helper needs and has no entitlements for. The
+# point here is a stable requirement, not a distributable signature.
+sign_binary() {
+  local path="$1" identifier="$2" identity
+  identity="$(signing_identity)"
+  if [ -z "$identity" ]; then
+    say "no code-signing identity found; leaving $(basename "$path") ad-hoc signed (its Accessibility grant will not survive the next rebuild)"
+    return 0
+  fi
+  if ! codesign -f -s "$identity" -i "$identifier" "$path" 2>&1 | tail -2; then
+    say "could not sign $(basename "$path"); leaving it as built"
+    return 0
+  fi
+  printf '%s' "$identity"
+}
+
 install_binary() {
-  local src="$1" dest="$2"
+  local src="$1" dest="$2" identifier="${3:-}"
   mkdir -p "$(dirname "$dest")"
   cp "$src" "$dest.new" || return 1
   chmod +x "$dest.new"
+  # Signed before the rename, so nothing is ever signed through a path something is executing.
+  [ -n "$identifier" ] && sign_binary "$dest.new" "$identifier" >/dev/null
   mv -f "$dest.new" "$dest"
 }
 
@@ -212,9 +271,13 @@ build_helper() {
     say "the activity helper did not build; skipping it"
     return 1
   fi
-  install_binary "$HELPER_SRC/.build/release/sb-activity" "$HELPER_BIN" || return 1
+  install_binary "$HELPER_SRC/.build/release/sb-activity" "$HELPER_BIN" "com.second-brain.activity" || return 1
   ok "helper built at $HELPER_BIN"
-  say "this rebuild voided any Accessibility grant the previous build had -- 'scripts/brain.sh status' says how to restore it"
+  if codesign -dvvv "$HELPER_BIN" 2>&1 | grep -q "Signature=adhoc"; then
+    say "this rebuild voided any Accessibility grant the previous build had -- 'scripts/brain.sh status' says how to restore it"
+  else
+    say "signed with a stable identity, so this is the last rebuild that needs the Accessibility grant given again"
+  fi
 }
 
 write_helper_plist() {
@@ -255,7 +318,7 @@ build_recorder() {
     say "the meeting recorder did not build; skipping it"
     return 1
   fi
-  install_binary "$RECORDER_SRC/.build/release/sb-recorder" "$RECORDER_BIN" || return 1
+  install_binary "$RECORDER_SRC/.build/release/sb-recorder" "$RECORDER_BIN" "com.second-brain.recorder" || return 1
   ok "recorder built at $RECORDER_BIN"
 }
 

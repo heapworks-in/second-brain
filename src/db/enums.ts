@@ -11,6 +11,7 @@ export const JOB_TYPES = [
   "transcribe_final",
   "summarize_meeting",
   "distill_note",
+  "judge_message",
   "embed",
   "weekly_reflect",
   "backup",

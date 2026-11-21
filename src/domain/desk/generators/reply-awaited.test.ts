@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { observations } from "@/db/schema";
 import { createTask } from "@/domain/tasks";
-import { ingestObservations, linkObservationToTask } from "@/domain/observations";
+import { ingestBatch, ingestObservations, linkObservationToTask } from "@/domain/observations";
 import { askUnanswered } from "./ask-unanswered";
 import { replyAwaited } from "./reply-awaited";
 
@@ -31,6 +31,30 @@ function asked(over: Record<string, unknown> = {}) {
   );
 }
 
+/** The same question, in a named conversation whose tail the reader could see. */
+function askedIn(channel: string, tail: { mineAt?: string; theirsAt?: string }, over: Record<string, unknown> = {}) {
+  ingestBatch(
+    t.db,
+    {
+      conversations: [{ source: "slack", externalId: channel, name: "#project-atlas", ...tail }],
+      observations: [
+        {
+          source: "slack",
+          externalId: `${channel}/${Math.random()}`,
+          at: "2026-11-01T09:00:00.000Z",
+          kind: "sent",
+          actorHandle: "avinash",
+          actorName: "Avinash",
+          text: "any update on the staging credentials?",
+          context: "#project-atlas",
+          ...over,
+        },
+      ],
+    },
+    NOW,
+  );
+}
+
 describe("replyAwaited", () => {
   it("proposes a question of mine that nobody answered", () => {
     t = makeTestDb();
@@ -42,12 +66,27 @@ describe("replyAwaited", () => {
     expect(draft.detail).toContain("13 days ago");
   });
 
-  it("says nothing once a reply has been seen", () => {
-    // The adaptor reports the reply by stamping the row, and re-ingest updates it. Nothing here
-    // goes looking: the card simply stops being proposed and reconcile takes it away.
+  it("says nothing once somebody else has spoken since", () => {
+    // Derived from the conversation, not reported per message: the reader says "the last thing
+    // anyone else said here was at T" and the card stops being proposed. Nothing here goes
+    // looking, and reconcile takes the card away.
     t = makeTestDb();
-    asked({ meta: { channel: "C1", answeredAt: "2026-11-02T10:00:00.000Z" } });
+    askedIn("C1", { theirsAt: "2026-11-02T10:00:00.000Z" });
     expect(replyAwaited(t.db, NOW)).toEqual([]);
+  });
+
+  it("says nothing once I have spoken since -- I stopped waiting on it", () => {
+    // A question followed by my own "thanks, all clear" is not one I am still waiting on, and
+    // three questions in a row should leave only the last. Both fall out of `mineAt`.
+    t = makeTestDb();
+    askedIn("C2", { mineAt: "2026-11-03T08:00:00.000Z" });
+    expect(replyAwaited(t.db, NOW)).toEqual([]);
+  });
+
+  it("still chases a question in a conversation nobody has spoken in since", () => {
+    t = makeTestDb();
+    askedIn("C3", { mineAt: "2026-11-01T09:00:00.000Z", theirsAt: "2026-10-28T09:00:00.000Z" });
+    expect(replyAwaited(t.db, NOW)).toHaveLength(1);
   });
 
   it("does not let answered messages crowd out the ones still hanging", () => {
@@ -55,7 +94,7 @@ describe("replyAwaited", () => {
     // ones have to be excluded in SQL or twenty-five of them fill it.
     t = makeTestDb();
     for (let i = 0; i < 25; i++) {
-      asked({ at: `2026-10-${String(i + 1).padStart(2, "0")}T09:00:00.000Z`, meta: { answeredAt: "2026-10-30T09:00:00.000Z" } });
+      askedIn(`CA${i}`, { theirsAt: "2026-10-31T09:00:00.000Z" }, { at: `2026-10-${String(i + 1).padStart(2, "0")}T09:00:00.000Z` });
     }
     asked({ at: "2026-11-01T09:00:00.000Z", text: "any update on the staging credentials?" });
 

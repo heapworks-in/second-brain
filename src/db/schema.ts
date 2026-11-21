@@ -654,6 +654,53 @@ export type Proposal = typeof proposals.$inferSelect;
  * mention has to arrive three weeks old, because `ask_unanswered`'s urgency grows with the
  * wait; stamping it with import time would quietly reset the whole backlog to zero.
  */
+/**
+ * A place messages happen: a Slack channel, a DM, later a thread.
+ *
+ * This is the memory a reader cannot have. A reader sees a viewport -- whatever Slack has drawn
+ * this second -- and the one question every generator needs answered is about what came *before*
+ * and *after* that: has anybody replied? Asked of a single row, in isolation, it is unanswerable,
+ * which is why the first version of this feature asked a much weaker question instead ("does a
+ * newer timestamp exist in this channel?") and why a mention you had already answered in Slack sat
+ * on the desk until you dismissed it by hand.
+ *
+ * Two timestamps answer it, and they are deliberately only two. Not a copy of the conversation:
+ * `mineAt` is the last time I said anything here and `theirsAt` the last time anybody else did,
+ * and from that pair every "is this still waiting?" falls out in SQL -- while the content of
+ * other people's messages never leaves Slack at all. A reader that parses a whole channel to
+ * report two numbers is reporting strictly less than one that reports the messages.
+ *
+ * They accumulate, which is the other half of the point. A mention arrives from the Activity view
+ * with no conversation behind it; weeks later you open that channel and reply; the next pass
+ * reports a newer `mineAt`, and the card expires on its own. Nothing had to scroll back to learn
+ * that -- the memory was built out of viewports you looked at anyway.
+ */
+export const conversations = sqliteTable(
+  "conversations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    source: text("source").notNull(),
+    /** The channel, DM or group id as the source names it -- `C0A1B2C3D`, `D04F5G6H7`. */
+    externalId: text("external_id").notNull(),
+    /** "#your-next-job", or a DM's name. Null until a pass has seen the view it names. */
+    name: text("name"),
+    /** channel | dm | group, inferred from the id's first letter. Free text, as `kind` is
+     * everywhere else here: the next adaptor will have its own words for the same idea. */
+    kind: text("kind").notNull(),
+    /** The last time I said anything here, as far as anything has seen. */
+    mineAt: text("mine_at"),
+    /** The last time anybody else did. */
+    theirsAt: text("theirs_at"),
+    /** When a pass last had this conversation in view. Not the same as either of the above: a
+     * channel can be read a hundred times with nobody saying a word in it. */
+    lastSeenAt: text("last_seen_at").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [uniqueIndex("conversations_source_external_idx").on(t.source, t.externalId)],
+);
+export type Conversation = typeof conversations.$inferSelect;
+
 export const observations = sqliteTable(
   "observations",
   {
@@ -680,6 +727,15 @@ export const observations = sqliteTable(
     meta: text("meta").notNull().default("{}"),
     /** Set when the proposal was accepted. Also what "already dealt with" means. */
     taskId: integer("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    /** Where it was said, so "has anybody replied since?" is answerable. Nullable: an adaptor
+     * that cannot say which conversation a message belongs to still reports the message, and a
+     * generator treats a missing conversation as "nothing is known", which is how every row
+     * behaved before this column existed. */
+    conversationId: integer("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    /** Who said it, resolved against `people` at ingest rather than left as a loose name, so a
+     * card can name a person you know and link to them. Nullable for the same reason as above,
+     * and for one more: `sent` is mine, and I am not a row in `people`. */
+    personId: integer("person_id").references(() => people.id, { onDelete: "set null" }),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -687,6 +743,7 @@ export const observations = sqliteTable(
     uniqueIndex("observations_source_external_idx").on(t.source, t.externalId),
     // The generator's only query: everything not yet turned into a task, oldest first.
     index("observations_open_idx").on(t.taskId, t.at),
+    index("observations_conversation_idx").on(t.conversationId, t.at),
   ],
 );
 export type Observation = typeof observations.$inferSelect;

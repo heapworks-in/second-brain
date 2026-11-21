@@ -1,8 +1,9 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { observations } from "@/db/schema";
+import { and, eq, isNull, not, or, sql } from "drizzle-orm";
+import { conversations, observations } from "@/db/schema";
+import { iSpokeSince, theySpokeSince } from "@/domain/conversations";
 import { threshold } from "../thresholds";
 import type { Generator } from "../types";
-import { oneLine } from "./ask-unanswered";
+import { judgedAsk, oneLine } from "./ask-unanswered";
 
 /** The same cap, for the same reason: one import must not be able to fill the desk. */
 const REPLY_CAP = 20;
@@ -15,11 +16,18 @@ const REPLY_CAP = 20;
  * it -- nobody is going to remind me that they never answered. The thing that was blocked stays
  * blocked, quietly, and the only person who ever finds out is me, late.
  *
- * Whether a reply came is a fact the adaptor can see and this cannot, so it reports it:
- * `meta.answeredAt` is set when a later message in the same conversation was rendered after
- * mine. Ingest upserts on `(source, externalId)`, so a pass that finally sees the reply updates
- * the row, this stops emitting, and `reconcileProposals` takes the card away. Nothing here has
- * to go looking.
+ * A question of mine is still hanging when my question is the last thing anybody said in that
+ * conversation: nobody else has spoken since (`theirsAt`), and neither have I (`mineAt`). The
+ * second half is not pedantry -- a question I followed with "thanks, all clear" is one I plainly
+ * stopped waiting on, and three questions in a row leave only the last. It misses a question I
+ * buried under my own later chatter, which is the right way round: at most one card per
+ * conversation, and only when the conversation really did stop on my question.
+ *
+ * Both facts come from the conversation's own row, which only ever moves forwards, so a pass that
+ * does not happen to have the reply on screen cannot make it un-arrive and flap the card. That it
+ * is derived rather than reported is why it is *right*: the first version of this took the
+ * adaptor's word for "something came after mine", which was true of whatever had been drawn and
+ * nothing more.
  *
  * A working day, not four hours. The inbound floor is short because I owe a reply quickly; this
  * one is long because somebody else does not owe me one quickly, and a card raised the same
@@ -30,27 +38,34 @@ export const replyAwaited: Generator = (db, now) => {
   // The answered ones are excluded in SQL rather than after the fetch, so twenty answered
   // messages cannot fill the cap and starve the questions still hanging.
   const rows = db
-    .select()
+    .select({ row: observations })
     .from(observations)
+    .leftJoin(conversations, eq(observations.conversationId, conversations.id))
     .where(
       and(
         isNull(observations.taskId),
         eq(observations.kind, "sent"),
-        sql`json_extract(${observations.meta}, '$.answeredAt') is null`,
+        // Fail-open on a missing conversation: an adaptor that cannot say where a message was
+        // said still gets its question chased, exactly as every row behaved before this table.
+        not(or(theySpokeSince(observations.at), iSpokeSince(observations.at))!),
+        // A model that read the words said this was not really asking for anything. Absent means
+        // unjudged, which counts as an ask: no verdict must never be the reason a question is
+        // dropped.
+        sql`coalesce(json_extract(${observations.meta}, '$.judge.ask'), 1) <> 0`,
       ),
     )
     .orderBy(observations.at)
     .limit(REPLY_CAP)
     .all();
 
-  return rows.flatMap((row) => {
+  return rows.flatMap(({ row }) => {
     const hours = (now.getTime() - Date.parse(row.at)) / 3_600_000;
     if (!Number.isFinite(hours) || hours < waitHours) return [];
     const days = Math.floor(hours / 24);
     const where = row.context ? ` in ${row.context}` : "";
     // Past the TTL the text is gone, so the card says where it was rather than quoting something
     // it no longer holds.
-    const what = row.text ? oneLine(row.text) : `Something you asked${where}`;
+    const what = judgedAsk(row.meta) ?? (row.text ? oneLine(row.text) : `Something you asked${where}`);
     const waited = days >= 1 ? `${days === 1 ? "a day" : `${days} days`}` : `${Math.floor(hours)}h`;
     return [
       {

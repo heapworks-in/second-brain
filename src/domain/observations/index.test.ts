@@ -3,7 +3,10 @@ import { makeTestDb, type TestDb } from "@/test/db";
 import type { DB } from "@/db/client";
 import { observations } from "@/db/schema";
 import { createTask } from "@/domain/tasks";
-import { classifyKind, ingestObservations, linkObservationToTask, openObservations, sweepObservationText } from "./index";
+import { createPerson, listPeople } from "@/domain/people";
+import { getConversation } from "@/domain/conversations";
+import { listJobs } from "@/jobs/queue";
+import { classifyKind, ingestBatch, ingestObservations, linkObservationToTask, openObservations, sweepObservationText } from "./index";
 
 let t: TestDb;
 afterEach(() => t?.cleanup());
@@ -163,5 +166,115 @@ describe("meta", () => {
     ingestObservations(t.db, [sent({ answeredAt: "2026-11-02T10:00:00.000Z" })]);
     ingestObservations(t.db, [sent({ answeredAt: "2026-11-03T10:00:00.000Z" })]);
     expect(stored(t.db).answeredAt).toBe("2026-11-03T10:00:00.000Z");
+  });
+});
+
+describe("ingestBatch and the conversation behind a message", () => {
+  it("files a message against the conversation its id names", () => {
+    const t = makeTestDb();
+    try {
+      ingestObservations(t.db, [obs({ externalId: "C0A1B2C3D/1794429455.100200" })], NOW);
+      const stored = t.db.select().from(observations).get()!;
+      const conversation = getConversation(t.db, stored.conversationId!)!;
+      expect(conversation.externalId).toBe("C0A1B2C3D");
+      expect(conversation.kind).toBe("channel");
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("records what a pass could see of the conversation's tail", () => {
+    const t = makeTestDb();
+    try {
+      ingestBatch(
+        t.db,
+        {
+          conversations: [{ source: "slack", externalId: "C1", name: "#atlas", mineAt: "2026-11-02T09:00:00.000Z" }],
+          observations: [obs({ externalId: "C1/1794429455.100200" })],
+        },
+        NOW,
+      );
+      const stored = t.db.select().from(observations).get()!;
+      expect(getConversation(t.db, stored.conversationId!)!.name).toBe("#atlas");
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  /* Matched, never created. Ingest runs on everything a reader sees, and creating from here would
+   * fill `people` with every posting bot in an announcements channel; a person becomes a row when
+   * you accept the card, at which point somebody really is waiting on you. */
+  it("links a sender the app already knows, and invents nobody it does not", () => {
+    const t = makeTestDb();
+    try {
+      const priya = createPerson(t.db, { name: "Priya Raman" });
+      ingestObservations(t.db, [obs({ externalId: "C1/1", actorName: "Priya Raman" })], NOW);
+      ingestObservations(t.db, [obs({ externalId: "C1/2", actorName: "VanBot" })], NOW);
+      const rows = t.db.select().from(observations).orderBy(observations.externalId).all();
+      expect(rows[0].personId).toBe(priya.id);
+      expect(rows[1].personId).toBeNull();
+      expect(listPeople(t.db)).toHaveLength(1);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("does not attach a person to something I sent", () => {
+    const t = makeTestDb();
+    try {
+      createPerson(t.db, { name: "Avinash" });
+      ingestObservations(t.db, [obs({ externalId: "C1/1", kind: "sent", actorName: "Avinash" })], NOW);
+      expect(t.db.select().from(observations).get()!.personId).toBeNull();
+    } finally {
+      t.cleanup();
+    }
+  });
+});
+
+describe("ingestBatch and the judge", () => {
+  const judgeJobs = (t: TestDb) => listJobs(t.db).filter((j) => j.type === "judge_message");
+
+  it("queues one verdict per newly arrived message", () => {
+    const t = makeTestDb();
+    try {
+      ingestObservations(t.db, [obs({ externalId: "C1/1" })], NOW);
+      expect(judgeJobs(t)).toHaveLength(1);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  /* A backfill is a scroll and a scroll overlaps itself: the same message is read on pass after
+   * pass. Queueing on every read would spend a local model's time re-deciding what it decided
+   * thirty seconds ago, forever. */
+  it("does not queue again when a later pass re-reads the same message", () => {
+    const t = makeTestDb();
+    try {
+      ingestObservations(t.db, [obs({ externalId: "C1/1" })], NOW);
+      ingestObservations(t.db, [obs({ externalId: "C1/1" })], NOW);
+      expect(judgeJobs(t)).toHaveLength(1);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("does not ask about a broadcast -- addressed to a room is already the verdict", () => {
+    const t = makeTestDb();
+    try {
+      ingestObservations(t.db, [obs({ externalId: "C1/1", text: "@channel we are hiring" })], NOW);
+      expect(judgeJobs(t)).toEqual([]);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("does not ask about a message with no words in it", () => {
+    const t = makeTestDb();
+    try {
+      ingestObservations(t.db, [obs({ externalId: "C1/1", text: "   " })], NOW);
+      expect(judgeJobs(t)).toEqual([]);
+    } finally {
+      t.cleanup();
+    }
   });
 });

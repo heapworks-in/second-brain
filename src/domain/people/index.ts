@@ -182,6 +182,11 @@ export function autoLinkMentions(db: DB, itemId: number): number {
 }
 
 /**
+ * The person behind an outside ask, if the app already knows them. Matching without creating,
+ * because ingest runs on everything a reader sees and creating from there would fill `people`
+ * with every posting bot in an announcements channel. A person is invented when you *accept* the
+ * card -- at which point somebody is genuinely waiting on you and worth a row.
+ *
  * The person behind an outside ask, made if this is the first time they have appeared.
  *
  * Matched on the display name before the handle, and that order is the point: somebody first
@@ -191,7 +196,7 @@ export function autoLinkMentions(db: DB, itemId: number): number {
  * Returns whether it created anyone, so an undo can remove a person this press invented without
  * touching one who was already known.
  */
-export function findOrCreateActor(db: DB, name: string | null, handle: string | null): { person: Person; created: boolean } {
+export function findActor(db: DB, name: string | null, handle: string | null): Person | undefined {
   const cleanName = name?.trim() ?? "";
   if (cleanName) {
     const byName = db
@@ -199,14 +204,20 @@ export function findOrCreateActor(db: DB, name: string | null, handle: string | 
       .from(people)
       .where(sql`lower(${people.name}) = ${cleanName.toLowerCase()}`)
       .get();
-    if (byName) return { person: byName, created: false };
+    if (byName) return byName;
   }
   const cleanHandle = handle?.trim().toLowerCase() ?? "";
   if (cleanHandle) {
     const bySlug = getPersonBySlug(db, cleanHandle);
-    if (bySlug) return { person: bySlug, created: false };
+    if (bySlug) return bySlug;
   }
-  const label = cleanName || cleanHandle;
+  return undefined;
+}
+
+export function findOrCreateActor(db: DB, name: string | null, handle: string | null): { person: Person; created: boolean } {
+  const found = findActor(db, name, handle);
+  if (found) return { person: found, created: false };
+  const label = name?.trim() || handle?.trim().toLowerCase() || "";
   if (!label) throw new PersonError("An ask with no name and no handle has nobody waiting on it");
   return { person: createPerson(db, { name: label }), created: true };
 }

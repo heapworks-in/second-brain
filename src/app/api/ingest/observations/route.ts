@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db/client";
 import { isPaused } from "@/domain/activity";
-import { ingestObservations } from "@/domain/observations";
+import { ingestBatch } from "@/domain/observations";
 import { requireHelperToken } from "@/lib/activity-auth";
 import { errorResponse } from "@/lib/api";
 
@@ -24,7 +24,30 @@ const Observation = z.object({
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 
-const Body = z.object({ observations: z.array(Observation).min(1).max(MAX_BATCH) });
+/**
+ * What an adaptor could see of a place messages happen -- two timestamps and a name, never a
+ * transcript. `mineAt` is the last time the user said anything there and `theirsAt` the last time
+ * anybody else did, which is all the server needs to answer "is this still waiting?" and all it
+ * is willing to hold about other people's messages.
+ */
+const Conversation = z.object({
+  source: z.string().min(1).max(32),
+  externalId: z.string().min(1).max(256),
+  name: z.string().max(256).nullish(),
+  kind: z.string().max(32).nullish(),
+  mineAt: z.string().nullish(),
+  theirsAt: z.string().nullish(),
+});
+
+// `observations` may be empty as long as something else arrived: a channel where only other
+// people have been talking keeps no messages at all, and its moved-forward `theirsAt` is exactly
+// what expires the card for a question of the user's that somebody has finally answered.
+const Body = z
+  .object({
+    observations: z.array(Observation).max(MAX_BATCH).default([]),
+    conversations: z.array(Conversation).max(MAX_BATCH).optional(),
+  })
+  .refine((b) => b.observations.length > 0 || (b.conversations?.length ?? 0) > 0, "Nothing to ingest");
 
 /**
  * An adaptor's only way in.
@@ -69,7 +92,7 @@ export async function POST(req: Request): Promise<Response> {
     const paused = isPaused(db);
     // Reported, not enforced by silence: an adaptor that keeps posting while paused gets a
     // truthful zero back and can stop, and nothing is written in the meantime.
-    const result = paused ? { accepted: 0, updated: 0 } : ingestObservations(db, parsed.data.observations);
+    const result = paused ? { accepted: 0, updated: 0 } : ingestBatch(db, parsed.data);
     return NextResponse.json({ ...result, paused }, { headers });
   } catch (err) {
     const res = errorResponse(err);

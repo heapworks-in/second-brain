@@ -1,6 +1,9 @@
 import { and, asc, eq, isNull, lt, sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { observations, type Observation } from "@/db/schema";
+import { conversationForMessage, upsertConversation, type ConversationInput } from "@/domain/conversations";
+import { findActor } from "@/domain/people";
+import { enqueueJob } from "@/jobs/queue";
 import { nowIso } from "@/lib/time";
 
 /**
@@ -23,6 +26,12 @@ export interface ObservationInput {
 export interface IngestResult {
   accepted: number;
   updated: number;
+}
+
+/** What one POST carries: the messages, and what is known about the places they were said. */
+export interface IngestBatch {
+  observations: ObservationInput[];
+  conversations?: ConversationInput[];
 }
 
 /** Days raw message text is kept for an observation nobody acted on. */
@@ -88,18 +97,44 @@ function mergeMeta(stored: string, incoming: Record<string, unknown> | undefined
  * resurrect an ask that has already been dealt with.
  */
 export function ingestObservations(db: DB, rows: ObservationInput[], now = new Date()): IngestResult {
+  return ingestBatch(db, { observations: rows }, now);
+}
+
+/**
+ * Upsert a batch, matching on `(source, externalId)`.
+ *
+ * Re-running a backfill must not duplicate: a backfill is a scroll back through Slack's Activity
+ * view and a scroll overlaps itself by design -- the same mention is read on two passes as the
+ * viewport moves over it.
+ *
+ * `taskId` is pointedly not in the update set. An observation already turned into a task stays
+ * linked to it even when a later backfill reads the same message again, so re-importing cannot
+ * resurrect an ask that has already been dealt with.
+ *
+ * Conversations are folded in first, because a message's own row points at one: the reader
+ * reports what it could see of each conversation's tail, and `upsertConversation` only ever moves
+ * those timestamps forwards. A message whose conversation the batch said nothing about still gets
+ * one, derived from its id -- an Activity row names a channel nobody has opened yet, and the card
+ * it raises should expire the day you finally reply there.
+ */
+export function ingestBatch(db: DB, batch: IngestBatch, now = new Date()): IngestResult {
   const at = now.toISOString();
   const result: IngestResult = { accepted: 0, updated: 0 };
-  db.transaction((tx) => {
-    for (const row of rows) {
-      const existing = tx
+  // `db` inside, not the handed-down `tx`: better-sqlite3 is synchronous, so the outer handle is
+  // inside the same transaction, and it is what the helpers here take. The same shape as
+  // `createTask` and `placeBlock`.
+  db.transaction(() => {
+    for (const conversation of batch.conversations ?? []) upsertConversation(db, conversation, now);
+    for (const row of batch.observations) {
+      const existing = db
         .select({ id: observations.id, meta: observations.meta })
         .from(observations)
         .where(and(eq(observations.source, row.source), eq(observations.externalId, row.externalId)))
         .get();
+      const kind = classifyKind(row.kind, row.text);
       const values = {
         at: row.at,
-        kind: classifyKind(row.kind, row.text),
+        kind,
         actorHandle: row.actorHandle ?? null,
         actorName: row.actorName ?? null,
         text: row.text ?? "",
@@ -107,18 +142,31 @@ export function ingestObservations(db: DB, rows: ObservationInput[], now = new D
         context: row.context ?? null,
         meta: JSON.stringify(row.meta ?? {}),
         updatedAt: at,
+        conversationId: conversationForMessage(db, row.source, row.externalId, now)?.id ?? null,
+        // `sent` is mine, and I am not a row in `people`.
+        personId: kind === "sent" ? null : (findActor(db, row.actorName ?? null, row.actorHandle ?? null)?.id ?? null),
       };
       if (existing) {
-        tx.update(observations)
+        db.update(observations)
           .set({ ...values, meta: mergeMeta(existing.meta, row.meta) })
           .where(eq(observations.id, existing.id))
           .run();
         result.updated += 1;
       } else {
-        tx.insert(observations)
+        const inserted = db
+          .insert(observations)
           .values({ source: row.source, externalId: row.externalId, ...values, createdAt: at })
-          .run();
+          .returning({ id: observations.id })
+          .get();
         result.accepted += 1;
+        // Judged once, on arrival, and only for something there are words to judge. The text is
+        // gone in fourteen days, so a verdict that reads the words has to be reached while they
+        // are still here -- and reached once, not on every sweep, because it costs a local model
+        // a round trip. A broadcast is not judged at all: it was addressed to a room, which is
+        // already the whole verdict.
+        if (inserted && values.text.trim() !== "" && kind !== "broadcast") {
+          enqueueJob(db, "judge_message", { observationId: inserted.id });
+        }
       }
     }
   });

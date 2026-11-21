@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { makeTestDb, type TestDb } from "@/test/db";
 import { observations } from "@/db/schema";
 import { createTask } from "@/domain/tasks";
-import { ingestObservations, linkObservationToTask } from "@/domain/observations";
+import { ingestBatch, ingestObservations, linkObservationToTask } from "@/domain/observations";
 import { askUnanswered } from "./ask-unanswered";
 
 let t: TestDb;
@@ -103,5 +103,84 @@ describe("askUnanswered and broadcasts", () => {
     const out = askUnanswered(t.db, NOW);
     expect(out).toHaveLength(1);
     expect(out[0].title).toContain("Q4 numbers");
+  });
+});
+
+/**
+ * The gap this feature had from the day it shipped: an ask stayed on the desk until it was
+ * dismissed by hand, however long ago it had been dealt with in Slack. "Did I reply?" has no
+ * answer at all without memory of the conversation, so it was never asked.
+ */
+describe("askUnanswered and a reply I already sent", () => {
+  function mentionIn(channel: string, tail: { mineAt?: string; theirsAt?: string }) {
+    ingestBatch(
+      t.db,
+      {
+        conversations: [{ source: "slack", externalId: channel, name: "#project-atlas", ...tail }],
+        observations: [
+          {
+            source: "slack",
+            externalId: `${channel}/${Math.random()}`,
+            at: "2026-11-01T09:00:00.000Z",
+            kind: "mention",
+            actorHandle: "priya",
+            actorName: "Priya Raman",
+            text: "can you confirm the Q4 numbers before Friday?",
+            context: "#project-atlas",
+          },
+        ],
+      },
+      NOW,
+    );
+  }
+
+  it("drops the card once I have spoken in that conversation since", () => {
+    t = makeTestDb();
+    mentionIn("C1", { mineAt: "2026-11-01T09:30:00.000Z" });
+    expect(askUnanswered(t.db, NOW)).toEqual([]);
+  });
+
+  it("keeps it when my last word there came before they asked", () => {
+    t = makeTestDb();
+    mentionIn("C2", { mineAt: "2026-10-20T09:00:00.000Z" });
+    expect(askUnanswered(t.db, NOW)).toHaveLength(1);
+  });
+
+  /* They asked twice and I still have not answered: somebody else speaking is not me replying,
+   * and reading it as one would lose the ask entirely. */
+  it("still owes a reply when only they have spoken since", () => {
+    t = makeTestDb();
+    mentionIn("C3", { theirsAt: "2026-11-09T09:00:00.000Z" });
+    expect(askUnanswered(t.db, NOW)).toHaveLength(1);
+  });
+
+  it("keeps it when nothing is known about the conversation", () => {
+    // Fail-open: an adaptor that cannot say where a message was said must not lose the ask.
+    t = makeTestDb();
+    ask();
+    expect(askUnanswered(t.db, NOW)).toHaveLength(1);
+  });
+});
+
+describe("askUnanswered and a model's verdict", () => {
+  it("drops what a model read and said was not asking for anything", () => {
+    t = makeTestDb();
+    ask({ meta: { judge: { ask: false } } });
+    expect(askUnanswered(t.db, NOW)).toEqual([]);
+  });
+
+  /* The verdict is allowed to improve a card. It is never allowed to be the reason one vanishes,
+   * so every way of having no verdict -- no model, job not run yet, unparseable meta -- reads as
+   * an ask. */
+  it("keeps an unjudged ask, and one whose meta will not parse", () => {
+    t = makeTestDb();
+    ask();
+    expect(askUnanswered(t.db, NOW)).toHaveLength(1);
+  });
+
+  it("titles the card with what the model said is wanted", () => {
+    t = makeTestDb();
+    ask({ meta: { judge: { ask: true, what: "confirm the Q4 numbers" } } });
+    expect(askUnanswered(t.db, NOW)[0].title).toBe("confirm the Q4 numbers");
   });
 });

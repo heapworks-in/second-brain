@@ -73,12 +73,19 @@ if args.contains("--slack") {
         tracker import matches an Owner column against.
         """)
     }
-    let observations = slack.read(mine: mine) ?? []
+    let reading = slack.read(mine: mine) ?? Reading(observations: [], conversations: [])
+    let observations = reading.observations
     print("\(observations.count) message(s) readable (Slack renders a viewport, not a feed)")
     for o in observations.prefix(10) {
         let who = o.kind == "sent" ? "you asked" : (o.actorName ?? "?")
-        let answered = o.meta?["answeredAt"] != nil ? " [answered]" : ""
-        print("  \(o.at)  \(who)\(answered)  \(o.context ?? o.externalId)  \(o.text.prefix(60))")
+        print("  \(o.at)  \(who)  \(o.context ?? o.externalId)  \(o.text.prefix(60))")
+    }
+    // Whether anything is still waiting is now the server's answer, drawn from these two numbers
+    // rather than stamped on each message -- so this is what to read when a card is or is not
+    // there and you want to know why.
+    for c in reading.conversations {
+        print("  conversation \(c.name ?? c.externalId): you last spoke \(c.mineAt ?? "never seen"),"
+            + " anybody else \(c.theirsAt ?? "never seen")")
     }
     // The names Slack is putting on these rows, which is the only way to see that the list of my
     // own spellings does not contain the one it uses. That mismatch is silent otherwise: the reader
@@ -105,9 +112,9 @@ if args.contains("--slack") {
             .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty else {
             log("no token at \(tokenPath)"); exit(1)
         }
-        struct Body: Encodable { var observations: [Observation] }
         let probe = Client(base: serverURL, token: token)
-        guard let data = try? JSONEncoder().encode(Body(observations: Array(observations.prefix(500)))),
+        guard let data = try? JSONEncoder().encode(
+                Reading(observations: Array(observations.prefix(500)), conversations: reading.conversations)),
               let (status, body) = probe.post("/api/ingest/observations", json: data) else {
             log("server not answering on \(serverURL)"); exit(1)
         }
@@ -172,21 +179,52 @@ if args.contains("--slack-self-check") {
     }
     let questions = SlackReader.ownQuestions(conversation, mine: me)
     // "thanks, all clear" asked nothing, and C2's unnamed row and C4's Priya are not mine.
-    let asked = questions.map { "\($0.0.channel)/\($0.0.ts)" }.sorted()
+    let asked = questions.map { "\($0.channel)/\($0.ts)" }.sorted()
     guard asked == ["C1/1794429455.100000", "C1/1794429460.100000", "C3/1794429490.100000"] else {
         log("FAIL: my own questions read as \(asked)"); exit(1)
-    }
-    // Only the newest message in a conversation can be left hanging. Both of C1's questions have
-    // something after them -- the second one my own "thanks, all clear", which is me saying I
-    // stopped waiting -- so C3's, the last thing said there, is the only one owed an answer.
-    let hanging = questions.filter { $0.1 == nil }.map { "\($0.0.channel)/\($0.0.ts)" }
-    guard hanging == ["C3/1794429490.100000"] else {
-        log("FAIL: still hanging read as \(hanging), wanted [C3/1794429490.100000]"); exit(1)
     }
     guard SlackReader.ownQuestions(conversation, mine: []).isEmpty else {
         log("FAIL: with no name to match, something was still claimed as mine"); exit(1)
     }
-    print("slack self-check ok: \(expected.count) rows across 2 schemes, \(furniture.count) non-messages, 1 unknown kind held back, \(asked.count) of \(conversation.count) conversation rows mine, \(hanging.count) still hanging")
+    // The tails, which are what the server decides "still waiting" from. Whether a question is
+    // hanging is no longer computed here -- the rule it used to encode now falls out of these two
+    // numbers per conversation, and the check is that the numbers are right.
+    let tails = SlackReader.tails(conversation, mine: me, name: "#atlas")
+        .sorted { $0.externalId < $1.externalId }
+    let summary = tails.map { "\($0.externalId) mine=\($0.mineAt ?? "-") theirs=\($0.theirsAt ?? "-")" }
+    // C1: I spoke three times and nobody else at all, the last at ...470 -- so both of my C1
+    // questions are superseded by my own "thanks, all clear" and neither is owed an answer.
+    // C2 is absent entirely: its one row's sender could not be read, so nothing is known about
+    // that conversation and an empty row for it would say so misleadingly. Guessing instead is
+    // what would silently answer a question nobody answered.
+    // C3: mine is the last thing said, so that question is the one still hanging.
+    // C4: Priya only, so `theirs` moves and `mine` does not -- which is what expires a card.
+    let wanted = [
+        "C1 mine=1794429470.100000 theirs=-",
+        "C3 mine=1794429490.100000 theirs=-",
+        "C4 mine=- theirs=1794429495.100000",
+    ]
+    // Compared as seconds-since-epoch rather than as the ISO strings the reader emits, so the check
+    // reads as the rule rather than as a timezone.
+    let asSeconds = summary.map { line in
+        line.split(separator: " ").map { part -> String in
+            guard let eq = part.firstIndex(of: "="), part[part.index(after: eq)...] != "-" else { return String(part) }
+            let key = part[..<eq]
+            let iso = String(part[part.index(after: eq)...])
+            guard let d = ISO8601DateFormatter.parse(iso) else { return String(part) }
+            return "\(key)=\(String(format: "%.6f", d))"
+        }.joined(separator: " ")
+    }
+    guard asSeconds == wanted else {
+        log("FAIL: conversation tails read as \(asSeconds), wanted \(wanted)"); exit(1)
+    }
+    // A name is attached only when the pass was looking at one conversation; the window title names
+    // the view, not each row in it.
+    guard tails.allSatisfy({ $0.name == nil }),
+          SlackReader.tails([conversation[4]], mine: me, name: "#atlas").first?.name == "#atlas" else {
+        log("FAIL: a view's name was attached to rows from more than one conversation"); exit(1)
+    }
+    print("slack self-check ok: \(expected.count) rows across 2 schemes, \(furniture.count) non-messages, 1 unknown kind held back, \(asked.count) of \(conversation.count) conversation rows mine, \(tails.count) conversation tails")
     exit(0)
 }
 
@@ -306,11 +344,15 @@ func tick() {
 /// are: an observation is a durable fact the server upserts on `(source, externalId)`, so the next
 /// pass re-reads and re-posts the same rows at no cost, and a missed post loses nothing.
 func postSlack() {
-    guard let observations = slack.read(mine: identities), !observations.isEmpty else { return }
-    struct Body: Encodable { var observations: [Observation] }
+    guard let reading = slack.read(mine: identities),
+          !(reading.observations.isEmpty && reading.conversations.isEmpty) else { return }
+    // Posted when there are no observations at all, as long as a conversation was seen: a channel
+    // full of other people talking keeps nothing, and still moves `theirsAt` forwards -- which is
+    // what takes the card away for a question of mine somebody has finally answered.
+    //
     // The server caps a batch at 500. A rendered viewport is nowhere near that, so this only ever
     // guards against a surprise rather than paging through one.
-    let body = Body(observations: Array(observations.prefix(500)))
+    let body = Reading(observations: Array(reading.observations.prefix(500)), conversations: reading.conversations)
     guard let data = try? encoder.encode(body),
           let (status, _) = client.post("/api/ingest/observations", json: data) else { return }
     if status == 401 { log("server rejected the token for observations (401)") }
