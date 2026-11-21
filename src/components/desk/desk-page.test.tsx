@@ -18,6 +18,7 @@ function card(over: Partial<ProposalDTO> = {}): ProposalDTO {
     source: "task",
     title: "Write the migration",
     detail: "Estimated 1h, 2h 35m spent so far.",
+    brief: null,
     rank: 0.8,
     createdAt: "2026-11-08T09:00:00.000Z",
     count: 1,
@@ -229,5 +230,25 @@ describe("DeskPage", () => {
     expect(await screen.findByText("That has already been answered")).toBeTruthy();
     // The card is still there to try again with.
     expect(screen.getByRole("heading", { name: "Write the migration" })).toBeTruthy();
+  });
+});
+
+describe("a card that arrives with context", () => {
+  const briefed = desk({
+    proposals: [card({ brief: { itemId: 42, title: "Migration plan", excerpt: "We froze schema changes until the audit finishes." } })],
+  });
+
+  /* The whole argument for the knowledge base: the note you already wrote shows up beside the
+   * thing that needed it, rather than waiting in a search box you have to remember to visit. */
+  it("shows what the knowledge base already holds, and links to it", () => {
+    render(<DeskPage initial={briefed} />);
+    expect(screen.getByText("Migration plan")).toBeTruthy();
+    expect(screen.getByText(/froze schema changes/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Migration plan/ }).getAttribute("href")).toBe("/items/42");
+  });
+
+  it("says nothing at all when there is nothing to say", () => {
+    render(<DeskPage initial={desk()} />);
+    expect(screen.queryByText("From your notes")).toBeNull();
   });
 });

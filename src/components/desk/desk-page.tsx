@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Check, Clock, RefreshCw, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, Check, Clock, RefreshCw, X } from "lucide-react";
 import type { DeskDTO, ProposalDTO } from "@/lib/dto";
 import { Button } from "../ui";
 import { PRIMARY_LABELS, dismissNote, groupIntoSections } from "./answers";
@@ -298,6 +298,23 @@ function Row({
         </div>
         <p className="m-0 text-[12.5px] text-fg-muted">{card.detail}</p>
         {note && <p className="m-0 text-[11.5px] text-fg-faint">{note}</p>}
+        {card.brief && (
+          /* What you already wrote about this. The reason a knowledge base is worth having rather
+             than a search page: the context arrives beside the thing it is context for, instead of
+             waiting in a box you have to remember to go and type into. Quiet by design -- it is
+             evidence for a decision, not the decision. */
+          <Link
+            href={`/items/${card.brief.itemId}`}
+            className="group/brief mt-1 block rounded-md border border-hairline bg-surface-sunken/60 px-2.5 py-1.5 no-underline transition-colors hover:border-hairline-strong hover:bg-surface-sunken"
+          >
+            <span className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wide text-fg-faint">
+              <BookOpen size={11} aria-hidden />
+              From your notes
+            </span>
+            <span className="mt-0.5 block text-[11.5px] font-medium text-fg-muted group-hover/brief:text-fg">{card.brief.title}</span>
+            <span className="mt-0.5 block text-[11.5px] leading-snug text-fg-faint line-clamp-2">{card.brief.excerpt}</span>
+          </Link>
+        )}
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">

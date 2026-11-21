@@ -12,6 +12,7 @@ import { reconcileRecordings, stopForShutdown } from "@/domain/meetings/reconcil
 import { sweepMissingSummaries } from "@/domain/meetings/summarize";
 import { summaryUnavailable } from "@/providers/chat";
 import { syncCalendarFeed } from "@/domain/activity";
+import { ingestDropFolder } from "@/domain/library/watch";
 import { checkOpenDatabase, recordDbCheck, getLastDbCheck } from "@/db/safety";
 import { getGistProvider } from "@/providers/gist";
 import { getEmbedProvider } from "./providers";
@@ -25,6 +26,7 @@ const g = globalThis as unknown as {
   __sbFeedInterval?: NodeJS.Timeout;
   __sbDistillInterval?: NodeJS.Timeout;
   __sbDeskInterval?: NodeJS.Timeout;
+  __sbDropInterval?: NodeJS.Timeout;
   __sbShutdownHooked?: boolean;
 };
 
@@ -40,6 +42,17 @@ const AUTO_START_CHECK_MS = 30 * 1000;
 
 /** Matches `QUIET_MINUTES`: no point checking more often than an item can newly go quiet. */
 const DISTILL_CHECK_MS = QUIET_MINUTES * 60_000;
+
+/**
+ * How often the drop folder is read.
+ *
+ * A poll rather than an FSEvents watcher, deliberately: a document is not urgent, two minutes is
+ * imperceptible for something you dropped in a folder, and a watcher is a subscription that can
+ * die quietly and leave the folder silently swallowing files. A scan that finds nothing is one
+ * readdir.
+ */
+const DROP_CHECK_MS = 2 * 60_000;
+const DROP_FIRST_MS = 20_000;
 
 /** The desk sweep. A quarter of an hour is the resolution of the most time-sensitive thing it
  * notices -- a meeting four hours out -- and anything faster would only re-read the same tables
@@ -177,6 +190,23 @@ export function boot(): JobWorker {
         }
       })();
     }, DISTILL_CHECK_MS);
+  }
+  if (!g.__sbDropInterval) {
+    // Wrapped like every other interval here: a folder somebody has pointed at something strange
+    // must not be the reason the worker stops.
+    const drop = () => {
+      try {
+        const out = ingestDropFolder(db);
+        if (out.ingested) console.log(`[library] took in ${out.ingested} document(s) from the drop folder`);
+        // Named, not counted: a document silently missing from the knowledge base is the failure
+        // this folder exists to remove.
+        for (const f of out.failures) console.warn(`[library] could not read ${f.file}: ${f.reason}`);
+      } catch (err) {
+        console.error("[library] drop folder scan failed:", err);
+      }
+    };
+    setTimeout(drop, DROP_FIRST_MS).unref();
+    g.__sbDropInterval = setInterval(drop, DROP_CHECK_MS);
   }
   if (!g.__sbDeskInterval) {
     // Queued rather than run here, so the sweep gets the worker's retry and its log line, and so

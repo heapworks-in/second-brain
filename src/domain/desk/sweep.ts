@@ -1,4 +1,5 @@
 import type { DB } from "@/db/client";
+import { enqueueJob } from "@/jobs/queue";
 import { collectDrafts } from "./generators";
 import { reconcileProposals, type ReconcileResult } from "./reconcile";
 import { sweepObservationText } from "@/domain/observations";
@@ -28,6 +29,16 @@ export function sweepDesk(db: DB, now = new Date(), log: (m: string) => void = (
   if (forgotten) log(`[desk] dropped the text of ${forgotten} observation(s) past the 14-day TTL`);
   if (result.opened || result.expired || result.returned) {
     log(`[desk] ${result.opened} new, ${result.expired} expired, ${result.returned} back from a snooze`);
+  }
+  // Newly opened cards have nothing attached yet. Queued rather than done here: the sweep is
+  // synchronous and runs behind a button press, and looking something up is a model round trip per
+  // card. Only when something opened, so an idle desk queues nothing.
+  if (result.opened > 0) {
+    try {
+      enqueueJob(db, "brief_desk", {});
+    } catch (err) {
+      log(`[desk] could not queue the context lookup: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   return { ...result, forgotten };
 }

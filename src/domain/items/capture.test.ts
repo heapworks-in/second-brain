@@ -113,3 +113,34 @@ describe("capture", () => {
     }
   });
 });
+
+describe("captureFile and a text document", () => {
+  /* The silent gap this closes: a `.md` file used to be saved, chunked from `title + body +
+   * extractedText` -- all three empty for a file -- and indexed as zero chunks. It showed up in
+   * the library, it opened, and no word inside it would ever find it. A watched folder feeding
+   * that pipeline would have been a folder that swallowed documents. */
+  it("reads the words in so the thing can actually be found", () => {
+    const t = makeTestDb();
+    try {
+      const item = captureFile(t.db, {
+        bytes: Buffer.from("# Migration plan\n\nFreeze schema changes until the audit finishes.", "utf8"),
+        name: "migration-plan.md",
+        mime: "text/markdown",
+      });
+      expect(item.extractedText).toContain("Freeze schema changes");
+      expect(getItemChunks(t.db, item.id).length).toBeGreaterThan(0);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("leaves a binary file's bytes alone", () => {
+    const t = makeTestDb();
+    try {
+      const item = captureFile(t.db, { bytes: Buffer.from([0x00, 0x01, 0x02]), name: "thing.bin", mime: "application/octet-stream" });
+      expect(item.extractedText).toBe("");
+    } finally {
+      t.cleanup();
+    }
+  });
+});

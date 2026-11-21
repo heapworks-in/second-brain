@@ -13,6 +13,9 @@ export interface CreateItemInput {
   sourceUrl?: string;
   filePath?: string;
   mimeType?: string;
+  /** Words lifted out of a file -- by the PDF extractor, by OCR, or simply read, for a file that
+   * is already text. What `rechunkItem` indexes, so a file without it is unfindable. */
+  extractedText?: string;
   meta?: Record<string, unknown>;
   status?: ItemStatus;
   journalDate?: string;
@@ -81,6 +84,7 @@ export function createItem(db: DB, input: CreateItemInput): Item {
       sourceUrl: input.sourceUrl ?? null,
       filePath: input.filePath ?? null,
       mimeType: input.mimeType ?? null,
+      extractedText: input.extractedText ?? "",
       meta: JSON.stringify(input.meta ?? {}),
       journalDate: input.journalDate ?? null,
       reviewWeek: input.reviewWeek ?? null,

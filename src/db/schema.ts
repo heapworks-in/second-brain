@@ -675,6 +675,104 @@ export type Proposal = typeof proposals.$inferSelect;
  * reports a newer `mineAt`, and the card expires on its own. Nothing had to scroll back to learn
  * that -- the memory was built out of viewports you looked at anyway.
  */
+/**
+ * A question asked of the knowledge base, what it answered from, and whether that was any good.
+ *
+ * This is the only place the system can learn from, and it exists because the alternative is
+ * unfalsifiable. "The brain is getting better" is a feeling unless something recorded what it was
+ * asked, what it reached for, and what you made of the result -- and once that is recorded, the
+ * improvement is measurable rather than asserted.
+ *
+ * Kept deliberately small. Not an analytics table: the question, the sources, a verdict. The
+ * ranker reads nothing else, so there is nothing here whose only purpose is to be looked at
+ * later.
+ */
+export const askLog = sqliteTable(
+  "ask_log",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    question: text("question").notNull(),
+    /** What came back, or "" when the corpus could not answer -- which is a result worth keeping:
+     * a run of unanswerable questions is the knowledge base telling you what to go and write. */
+    answer: text("answer").notNull().default(""),
+    /** Why there was no answer, when there was none. */
+    unavailable: text("unavailable"),
+    askedAt: text("asked_at").notNull(),
+    /** "ask" when a person typed it, "brief" when the desk asked on their behalf.
+     *
+     * Both feed the ranker -- the brief path is the one that actually gets used, so excluding it
+     * would mean learning only from the surface nobody visits. Only "ask" rows count as questions
+     * the knowledge base failed to answer, because a card title the corpus knows nothing about is
+     * not a document anybody was missing. */
+    source: text("source").notNull().default("ask"),
+    /** null until somebody says; 1 useful, 0 not. Absent is not the same as bad, and the ranker
+     * treats it that way -- most questions are never rated and must not count against anything. */
+    useful: integer("useful"),
+  },
+  (t) => [index("ask_log_asked_idx").on(t.askedAt)],
+);
+export type AskLogEntry = typeof askLog.$inferSelect;
+
+/**
+ * Which items an answer was actually built from.
+ *
+ * `cited` separates "shown to the model" from "used by the model", because crediting everything
+ * retrieved would teach the ranker that whatever retrieval already favours is good -- a loop that
+ * learns its own prior and nothing else.
+ */
+export const askSources = sqliteTable(
+  "ask_sources",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    askId: integer("ask_id")
+      .notNull()
+      .references(() => askLog.id, { onDelete: "cascade" }),
+    itemId: integer("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    chunkId: integer("chunk_id"),
+    cited: integer("cited").notNull().default(0),
+  },
+  (t) => [index("ask_sources_item_idx").on(t.itemId), index("ask_sources_ask_idx").on(t.askId)],
+);
+export type AskSource = typeof askSources.$inferSelect;
+
+/**
+ * The most relevant thing the knowledge base already holds about a card on the desk.
+ *
+ * A table of its own rather than a field on the proposal, because `reconcileProposals` rewrites
+ * `payload` from the draft on every sweep -- a brief stored there would be erased every fifteen
+ * minutes and recomputed, which is a round trip to a local model every quarter of an hour for an
+ * answer that has not changed.
+ *
+ * This is the half of a knowledge base that does any work. A box you type questions into is
+ * something you have to remember to go and use; what removes work is the thing you were already
+ * looking at arriving with the context attached -- the note you wrote six months ago, next to the
+ * message asking you about it.
+ */
+export const proposalBriefs = sqliteTable(
+  "proposal_briefs",
+  {
+    proposalId: integer("proposal_id")
+      .primaryKey()
+      .references(() => proposals.id, { onDelete: "cascade" }),
+    /** Null when the corpus was searched and had nothing relevant -- which is the common case and
+     * not a failure. The row's existence means "looked", so a card with nothing to say is not
+     * looked up again on every sweep for the rest of its life. The cost is that a document added
+     * tomorrow will not retroactively brief a card from today, which is the right trade: a card
+     * is read in the days after it opens, not the month after. */
+    itemId: integer("item_id").references(() => items.id, { onDelete: "cascade" }),
+    /** The item's title, copied, so rendering a card is one query and a deleted item degrades to
+     * a dead link rather than a crash. */
+    title: text("title"),
+    /** One or two sentences, already trimmed for a card. */
+    excerpt: text("excerpt"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("proposal_briefs_item_idx").on(t.itemId)],
+);
+export type ProposalBrief = typeof proposalBriefs.$inferSelect;
+
 export const conversations = sqliteTable(
   "conversations",
   {

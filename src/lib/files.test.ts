@@ -24,6 +24,11 @@ describe("files", () => {
     expect(kindForMime("image/png", "a.png")).toBe("image");
     expect(kindForMime("audio/mpeg", "a.mp3")).toBe("audio");
     expect(kindForMime("application/octet-stream", "call.m4a")).toBe("audio");
-    expect(kindForMime("text/plain", "notes.txt")).toBe("other");
+    // Was "other", which was the bug: a text file took the binary path, so its words never
+    // reached `extractedText`, nothing was chunked, and the document was in the library but
+    // unfindable by any word inside it.
+    expect(kindForMime("text/plain", "notes.txt")).toBe("text");
+    expect(kindForMime("", "plan.md")).toBe("text");
+    expect(kindForMime("application/octet-stream", "thing.bin")).toBe("other");
   });
 });

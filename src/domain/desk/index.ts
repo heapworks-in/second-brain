@@ -6,6 +6,7 @@ import { startOfLocalDay } from "@/lib/time";
 import { dismissRate, BOARD_CEILING } from "./rank";
 import { originOf } from "./origin";
 import { openProposals } from "./reconcile";
+import { briefsFor } from "@/domain/knowledge/brief";
 
 export { BOARD_CEILING } from "./rank";
 export { reconcileProposals, openProposals } from "./reconcile";
@@ -36,6 +37,12 @@ function countOf(payload: string): number {
   return typeof n === "number" && n > 1 ? n : 1;
 }
 
+/** The DTO shape, with the "looked and found nothing" rows already filtered out upstream. */
+function briefOf(row: { itemId: number | null; title: string | null; excerpt: string | null } | undefined) {
+  if (!row || row.itemId === null || row.title === null || row.excerpt === null) return null;
+  return { itemId: row.itemId, title: row.title, excerpt: row.excerpt };
+}
+
 export function deskPayload(db: DB, now: Date): DeskDTO {
   const rows = openProposals(db, BOARD_CEILING);
   const rates = new Map(rows.map((r) => [r.kind, 0]));
@@ -49,6 +56,9 @@ export function deskPayload(db: DB, now: Date): DeskDTO {
       .where(and(gte(proposals.decidedAt, startOfLocalDay(now)), sql`${proposals.state} in ('accepted', 'dismissed')`))
       .get()?.n ?? 0;
 
+  // One query for the page's worth, not one per card.
+  const briefs = briefsFor(db, rows.map((r) => r.id));
+
   const list: ProposalDTO[] = rows.map((r) => ({
     id: r.id,
     kind: r.kind,
@@ -60,6 +70,7 @@ export function deskPayload(db: DB, now: Date): DeskDTO {
     dismissRate: rates.get(r.kind) ?? 0,
     count: countOf(r.payload),
     origin: originOf(db, r.kind, parsePayload(r.payload)),
+    brief: briefOf(briefs.get(r.id)),
   }));
 
   return { proposals: list, open, decidedToday };

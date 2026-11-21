@@ -750,6 +750,12 @@ export interface ProposalDTO {
   /** What the card is about, and where to go and look at it. Null when the kind has nothing
    * worth naming. */
   origin: { label: string; href: string | null } | null;
+  /** What the knowledge base already holds about this, when it holds anything.
+   *
+   * The difference between a queue of things to go and work out and a queue of things that arrive
+   * with the answer attached -- the note where you decided this, next to the message asking you
+   * about it. Null for most cards, which is honest: a personal corpus is small. */
+  brief: { itemId: number; title: string; excerpt: string } | null;
 }
 
 export interface DeskDTO {

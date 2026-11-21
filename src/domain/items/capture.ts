@@ -79,11 +79,17 @@ export function captureLink(
 
 export function captureFile(
   db: DB,
-  input: { bytes: Buffer; name: string; mime: string; tags?: string[]; containerId?: number | null },
+  input: { bytes: Buffer; name: string; mime: string; tags?: string[]; containerId?: number | null; meta?: Record<string, unknown> },
 ): Item {
   const kind = kindForMime(input.mime, input.name);
   assertContainerExists(db, input.containerId);
   const saved = saveFile(input.bytes, input.name);
+  // A text document's words go in `extractedText` -- the same slot the PDF extractor and the OCR
+  // pass fill -- because that is what `rechunkItem` reads. Read here rather than in a job: there
+  // is nothing to extract, and a job would mean a file that is briefly in the library and
+  // unfindable. Capped at the same 2MB the PDF path keeps, so somebody dropping a 400MB log does
+  // not put the whole thing through a chunker.
+  const words = kind === "text" ? input.bytes.subarray(0, 2_000_000).toString("utf8") : undefined;
   // Dropped-in audio is a meeting with no notes yet: the transcript is what makes it one.
   const audio = kind === "audio";
   const item = createItem(db, {
@@ -92,7 +98,8 @@ export function captureFile(
     filePath: saved.relativePath,
     mimeType: input.mime,
     status: audio ? "processing" : undefined,
-    meta: { kind, size: input.bytes.length },
+    extractedText: words,
+    meta: { kind, size: input.bytes.length, ...input.meta },
     containerId: input.containerId ?? null,
   });
   if (input.tags) setItemTags(db, item.id, input.tags);
