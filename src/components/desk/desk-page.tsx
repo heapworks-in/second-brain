@@ -122,10 +122,10 @@ export function DeskPage({ initial }: { initial: DeskDTO }) {
   const refresh = useCallback(async () => {
     setBusy(true);
     try {
+      // The route waits for the sweep it queued, so by the time this answers the proposals
+      // table is already the new one -- no sleep to guess at, which is what used to make the
+      // button re-read the desk it already had.
       await fetch("/api/desk/refresh", { method: "POST" });
-      // The sweep runs in the worker, so the answer is not the new desk: give it a moment and
-      // re-read. A refresh that reported nothing new would read as a broken button.
-      await new Promise((r) => setTimeout(r, 600));
       const res = await fetch("/api/desk", { cache: "no-store" });
       if (res.ok) settle((await res.json()) as DeskDTO);
     } finally {

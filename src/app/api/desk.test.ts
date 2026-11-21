@@ -197,9 +197,20 @@ describe("DELETE /api/desk/[id]", () => {
 });
 
 describe("POST /api/desk/refresh", () => {
-  it("queues the same sweep the interval does", async () => {
+  /* The button used to queue the sweep and answer immediately. The worker polls once a second,
+   * so the desk the client then re-read was the one it already had -- the proposal below would
+   * not have existed yet. Answering only once the sweep has run is the whole point of it. */
+  it("has swept by the time it answers", async () => {
+    getDb()
+      .insert(tasks)
+      .values({ title: "Something overdue", dueDate: "2020-01-01", createdAt: NOW.toISOString(), updatedAt: NOW.toISOString() })
+      .run();
     const res = await r.refresh.POST(json("POST", "/api/desk/refresh"));
-    expect(res.status).toBe(202);
-    expect(await res.json()).toMatchObject({ queued: expect.any(Number) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ opened: expect.any(Number) });
+
+    const desk = await r.desk.GET();
+    const body = (await desk.json()) as { proposals: { kind: string }[] };
+    expect(body.proposals.some((p) => p.kind === "task_overdue")).toBe(true);
   });
 });
