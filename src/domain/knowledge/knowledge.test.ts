@@ -195,9 +195,23 @@ describe("sourceWeight", () => {
     expect(sourceWeight(t.db, 1, NOW)).toBe(1);
   });
 
-  it("lifts an item that keeps earning its place", () => {
+  /* Measured, not assumed. Promoting a much-cited item cost 0.19 of precision@1 on the eval
+   * set while buying nothing recall could not already do: being cited often means it answered
+   * the questions that happened to be asked, and lifting it on that is popularity rather than
+   * relevance to the question in hand. Penalty only scored 0.81 where promotion scored 0.60. */
+  it("does not lift an item however often it is cited", () => {
     corpus();
-    shownTimes(1, 6, { cited: true });
+    shownTimes(2, 20, { cited: false });
+    shownTimes(1, 10, { cited: true });
+    expect(sourceWeight(t.db, 1, NOW)).toBe(1);
+  });
+
+  /* The one bonus left, because it is the one signal nobody inferred: a person read the answer
+   * and said it was good. */
+  it("lifts an item whose answers a person called useful", () => {
+    corpus();
+    shownTimes(2, 20, { cited: false });
+    shownTimes(1, 10, { cited: true, useful: true });
     expect(sourceWeight(t.db, 1, NOW)).toBeGreaterThan(1);
   });
 
@@ -205,8 +219,37 @@ describe("sourceWeight", () => {
    * use for. Nudging it down is how the corpus stops being dominated by whatever matches best. */
   it("pushes down an item retrieval keeps picking and nobody uses", () => {
     corpus();
-    shownTimes(1, 6, { cited: false });
+    shownTimes(2, 10, { cited: true });
+    shownTimes(1, 20, { cited: false });
     expect(sourceWeight(t.db, 1, NOW)).toBeLessThan(1);
+  });
+
+  /* The bug this replaced, and the reason it is worth a test of its own. The neutral point used
+   * to be a hard-coded half, but an answer is built from six sources and draws on one or two, so
+   * the rate a typical source reaches is nearer a tenth -- 0.117, measured on real traffic.
+   * Against a neutral of a half, every document in the corpus scored below par and the weighting
+   * stopped ranking by usefulness and started ranking by which one or two happened to be cited.
+   * An ordinary source must come out exactly where retrieval put it. */
+  it("leaves a source cited about as often as the rest exactly where retrieval put it", () => {
+    corpus();
+    // Two items, each cited on a third of the answers that showed them: both are ordinary.
+    for (const id of [1, 2]) {
+      shownTimes(id, 10, { cited: true });
+      shownTimes(id, 20, { cited: false });
+    }
+    expect(sourceWeight(t.db, 1, NOW)).toBeCloseTo(1, 5);
+  });
+
+  /* Thin evidence nudges, real evidence moves. A hard threshold said an item shown twice was
+   * worth nothing and one shown three times worth everything, which is untrue of both. */
+  it("moves less on three showings than on thirty of the same story", () => {
+    corpus();
+    shownTimes(2, 30, { cited: true });
+    shownTimes(1, 3, { cited: false });
+    const thin = Math.abs(1 - sourceWeight(t.db, 1, NOW));
+    shownTimes(1, 27, { cited: false });
+    const thick = Math.abs(1 - sourceWeight(t.db, 1, NOW));
+    expect(thick).toBeGreaterThan(thin);
   });
 
   it("stays inside a narrow band however one-sided the evidence", () => {

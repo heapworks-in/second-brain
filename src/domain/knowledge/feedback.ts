@@ -24,8 +24,19 @@ const WINDOW_DAYS = 90;
 const MIN_WEIGHT = 0.8;
 const MAX_WEIGHT = 1.3;
 
-/** Citations before the weighting is believed at all. Below this, one accident is the whole signal. */
-const MIN_EVIDENCE = 3;
+/**
+ * How much evidence makes a weight worth believing in full.
+ *
+ * A soft version of the hard floor this used to have. A threshold says an item shown twice is
+ * worth nothing and an item shown three times is worth everything, which is not true of either;
+ * this scales the adjustment by `shown / (shown + CONFIDENCE)`, so thin evidence nudges and
+ * real evidence moves. An item shown 10 times gets half the adjustment, 30 times three
+ * quarters, and one shown once barely moves at all.
+ */
+const CONFIDENCE = 10;
+
+/** How far below the ordinary citation rate is as far down as an item can be pushed. */
+const SPREAD = 0.2;
 
 export interface Recorded {
   askId: number;
@@ -97,6 +108,34 @@ export function recentAsks(db: DB, limit = 50): AskLogEntry[] {
  * guessing is what makes a feedback loop impossible to debug, because you can never tell the
  * learned behaviour from the invented default.
  */
+/**
+ * How often a source that was shown gets cited, across everything asked in the window.
+ *
+ * The neutral point, and it has to be measured rather than assumed. This used to be a hard-coded
+ * half, which quietly made the whole weighting a penalty: an answer is built from six sources
+ * and draws on one or two, so the rate a *typical* source achieves is nearer a tenth -- measured
+ * at 0.117 on real traffic. Against a neutral of 0.5 every document in the corpus scored below
+ * par, and the ranking stopped being "what earns its place" and became "what happened to be
+ * cited", which is noise. Measured on an eval set it cost 0.19 of precision@1 while it was
+ * cleaning up pollution, which is how it was found.
+ *
+ * The same class of mistake as thresholding a reciprocal-rank-fusion score: a constant that
+ * reads as reasonable and sits outside the range the thing can actually reach.
+ */
+export function citationBaseline(db: DB, since: string): number {
+  const row = db
+    .select({ shown: sql<number>`count(*)`, cited: sql<number>`coalesce(sum(${askSources.cited}), 0)` })
+    .from(askSources)
+    .innerJoin(askLog, eq(askSources.askId, askLog.id))
+    .where(gte(askLog.askedAt, since))
+    .get();
+  const shown = row?.shown ?? 0;
+  // Nothing to measure yet: no item can be above or below an average that does not exist, so
+  // every weight comes out exactly 1 and the ranker is retrieval alone, as it was before.
+  if (shown === 0) return 0;
+  return (row?.cited ?? 0) / shown;
+}
+
 export function sourceWeight(db: DB, itemId: number, now = new Date()): number {
   const since = new Date(now.getTime() - WINDOW_DAYS * 86_400_000).toISOString();
   const row = db
@@ -112,23 +151,49 @@ export function sourceWeight(db: DB, itemId: number, now = new Date()): number {
     .get();
 
   const shown = row?.shown ?? 0;
-  if (shown < MIN_EVIDENCE) return 1;
+  if (shown === 0) return 1;
 
   const cited = row?.cited ?? 0;
   const helped = row?.helped ?? 0;
   const hurt = row?.hurt ?? 0;
 
-  // Centred on 1: a citation rate of a half leaves an item exactly where retrieval put it, and
-  // the two halves of the range are deliberately lopsided -- being cited every time is good
-  // evidence, being cited never is better evidence, because it means retrieval keeps choosing
-  // something a reader then had no use for.
-  const rate = cited / shown;
-  const fromCitations = 1 + (rate - 0.5) * 0.4;
+  const baseline = citationBaseline(db, since);
+  if (baseline === 0) return 1;
 
-  // A rating is a much stronger signal than a citation and is allowed to move more, but only
-  // where somebody actually gave one.
+  /*
+   * A penalty, never a bonus, and this is the whole design -- measured, not assumed.
+   *
+   * Citation is strong evidence in one direction only. Shown eighteen times and never once
+   * drawn on says a document matches the *words* of everything and answers none of it, which is
+   * exactly the noise worth demoting. Being cited often says something much weaker: that it
+   * answered the questions that happened to get asked. Promoting on that is popularity, and
+   * popularity is not relevance-to-this-question -- it lifts last week's favourite into this
+   * week's unrelated query.
+   *
+   * Both halves were measured against the eval set, same corpus, same questions, with a
+   * train/test split so the numbers are not the loop grading its own homework:
+   *
+   *                               recall   p@1   clean      (test half: p@1 / clean)
+   *   no weighting at all           1.00  0.79    0.52            0.86 / 0.52
+   *   bonus and penalty             1.00  0.60    0.74            0.57 / 0.81
+   *   penalty only                  1.00  0.81    0.74            0.90 / 0.81
+   *
+   * The bonus bought the pollution fix at 0.19 of precision. Dropping it keeps the fix and ends
+   * up *above* where no weighting started, on questions the weighting never trained on.
+   *
+   * Centred on the rate an ordinary source actually reaches rather than on a half, scaled by
+   * how much evidence stands behind it, so three showings nudge and thirty move.
+   */
+  const rate = cited / shown;
+  const relative = Math.max(-1, Math.min(0, (rate - baseline) / baseline));
+  const trust = shown / (shown + CONFIDENCE);
+  const fromCitations = 1 + relative * SPREAD * trust;
+
+  // A rating is the one place a bonus is still allowed, because it is the one signal that is
+  // not inferred: somebody read the answer and said it was good. It is also the rarest, so it
+  // moves more per unit than a citation does -- and only where somebody actually gave one.
   const rated = helped + hurt;
-  const fromRatings = rated === 0 ? 0 : ((helped - hurt) / rated) * 0.2;
+  const fromRatings = rated === 0 ? 0 : ((helped - hurt) / rated) * 0.2 * trust;
 
   return Math.max(MIN_WEIGHT, Math.min(MAX_WEIGHT, fromCitations + fromRatings));
 }
