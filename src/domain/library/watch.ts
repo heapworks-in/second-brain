@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, isNull, like, sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { items } from "@/db/schema";
-import { captureFile } from "@/domain/items/capture";
+import { captureFile, queueEmbedding } from "@/domain/items/capture";
 import { getSetting } from "@/domain/settings";
 import { dataDir } from "@/lib/paths";
 
@@ -157,4 +157,52 @@ export function ingestDropFolder(db: DB, now = new Date()): WatchResult {
     }
   }
   return result;
+}
+
+/** The most items one pass will rebuild. Bounded like every other sweep here. */
+const MAX_REINDEX = 10;
+
+/**
+ * Items holding text that no chunk was ever built from.
+ *
+ * A document in this state is in the library, has a title, opens, reads perfectly -- and does not
+ * exist as far as search, the knowledge base and every answer built on it are concerned. There is
+ * nothing to notice: no error, no pending status, no empty page. It is the quietest failure this
+ * app has, and the only one that gets worse the more you trust the thing it breaks.
+ *
+ * Two of these were sitting in the live library when the eval was first run, and the eval only
+ * found them because the questions happened to be about that document. Hence this, which does not
+ * depend on anybody having written the right question.
+ */
+export function unindexedItems(db: DB, limit = MAX_REINDEX): { id: number; title: string }[] {
+  return db
+    .select({ id: items.id, title: items.title })
+    .from(items)
+    .where(
+      and(
+        isNull(items.archivedAt),
+        // Real text, so an empty item is not reported forever as a thing to fix. Any non-empty
+        // text produces at least one chunk, which is what makes a pass guaranteed to make
+        // progress rather than retrying the same rows every two minutes.
+        sql`trim(coalesce(${items.body}, '') || coalesce(${items.extractedText}, '')) <> ''`,
+        sql`not exists (select 1 from chunks where chunks.item_id = ${items.id})`,
+      ),
+    )
+    .orderBy(items.id)
+    .limit(limit)
+    .all();
+}
+
+/**
+ * Rebuild the chunks for anything holding text that was never indexed, and return how many.
+ *
+ * Self-healing rather than a repair button, because the failure is invisible and nobody will ever
+ * go and press one. Whatever put an item in this state -- a handler that forgot, a job that died
+ * between writing the text and indexing it, a version of this app from before the step existed --
+ * the next pass picks it up.
+ */
+export function reindexOrphans(db: DB, limit = MAX_REINDEX): { id: number; title: string }[] {
+  const orphans = unindexedItems(db, limit);
+  for (const item of orphans) queueEmbedding(db, item.id);
+  return orphans;
 }

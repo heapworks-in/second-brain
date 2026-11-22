@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "An eval set is written from your own corpus and belongs outside this repo, at",
+    "~/Library/Application Support/second-brain/eval/seed.json. This file only shows the shape.",
+    "`expect` and `forbid` are document titles. `forbid` is the half that catches the failure",
+    "nobody looks for: one sprawling document that ranks into the top three of every unrelated",
+    "question, which makes recall go up while the answers get worse.",
+    "`refusal` questions must be genuinely absent from the corpus -- they measure whether the",
+    "system says so instead of inventing something confident about your own work."
+  ],
+  "retrieval": [
+    { "question": "how long is the deep work block?", "expect": ["Weekly time budget"], "forbid": ["Enteric nervous system"] },
+    { "question": "what goes in a decision journal entry?", "expect": ["Decision journal entry"] }
+  ],
+  "refusal": [
+    { "question": "what did we agree about enterprise pricing?" },
+    { "question": "who is on call this weekend?" }
+  ]
+}

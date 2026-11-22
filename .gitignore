@@ -47,5 +47,10 @@ next-env.d.ts
 programs/*.json
 !programs/example.json
 
+# An eval set names your own documents and the questions you really ask. The example is the
+# shared part; yours lives in ~/Library/Application Support/second-brain/eval/.
+eval/*.json
+!eval/example.json
+
 # staging for bundled adaptors, copied from the sibling sb-adaptors repo at build time
 desktop/build/

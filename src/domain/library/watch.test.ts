@@ -2,11 +2,13 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { eq } from "drizzle-orm";
 import { makeTestDb, type TestDb } from "@/test/db";
-import { items } from "@/db/schema";
-import { getItemChunks } from "@/domain/items";
+import { chunks, items } from "@/db/schema";
+import { archiveItem, getItemChunks } from "@/domain/items";
+import { captureNote } from "@/domain/items/capture";
 import { setSetting } from "@/domain/settings";
-import { DROP_DIR_SETTING, ingestDropFolder } from "./watch";
+import { DROP_DIR_SETTING, ingestDropFolder, reindexOrphans, unindexedItems } from "./watch";
 
 let t: TestDb;
 let drop: string;
@@ -118,5 +120,42 @@ describe("ingestDropFolder", () => {
     for (let i = 0; i < 30; i++) write(`doc-${i}.md`, `document number ${i}`);
     expect(ingestDropFolder(t.db, NOW).ingested).toBe(25);
     expect(ingestDropFolder(t.db, NOW).ingested).toBe(5);
+  });
+});
+
+describe("reindexOrphans", () => {
+  /* The quietest failure here: text in the library that no chunk was ever built from. The item
+   * opens and reads perfectly and is invisible to search, the knowledge base and every answer
+   * built on them. Two were found in the live library by an eval that only caught them because
+   * its questions happened to be about that document. */
+  /** An item carrying text that nothing was ever indexed from, as the live library held two of. */
+  function orphan(title: string, body: string): number {
+    const item = captureNote(t.db, { title, body });
+    t.db.delete(chunks).where(eq(chunks.itemId, item.id)).run();
+    return item.id;
+  }
+
+  it("finds and rebuilds an item whose text was never indexed", () => {
+    t = makeTestDb();
+    const id = orphan("Platform sync", "The backfill takes six hours.");
+
+    expect(unindexedItems(t.db).map((i) => i.title)).toEqual(["Platform sync"]);
+    expect(reindexOrphans(t.db)).toHaveLength(1);
+    expect(getItemChunks(t.db, id)).toHaveLength(1);
+    // Nothing left to do on the next pass, which is what stops this retrying the same rows every
+    // two minutes forever.
+    expect(unindexedItems(t.db)).toEqual([]);
+  });
+
+  it("leaves an item with no text alone", () => {
+    t = makeTestDb();
+    orphan("", "");
+    expect(unindexedItems(t.db)).toEqual([]);
+  });
+
+  it("ignores an archived item", () => {
+    t = makeTestDb();
+    archiveItem(t.db, orphan("Old plan", "Something written down once."));
+    expect(unindexedItems(t.db)).toEqual([]);
   });
 });

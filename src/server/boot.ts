@@ -12,7 +12,7 @@ import { reconcileRecordings, stopForShutdown } from "@/domain/meetings/reconcil
 import { sweepMissingSummaries } from "@/domain/meetings/summarize";
 import { summaryUnavailable } from "@/providers/chat";
 import { syncCalendarFeed } from "@/domain/activity";
-import { ingestDropFolder } from "@/domain/library/watch";
+import { ingestDropFolder, reindexOrphans } from "@/domain/library/watch";
 import { checkOpenDatabase, recordDbCheck, getLastDbCheck } from "@/db/safety";
 import { getGistProvider } from "@/providers/gist";
 import { getEmbedProvider } from "./providers";
@@ -201,6 +201,10 @@ export function boot(): JobWorker {
         // Named, not counted: a document silently missing from the knowledge base is the failure
         // this folder exists to remove.
         for (const f of out.failures) console.warn(`[library] could not read ${f.file}: ${f.reason}`);
+        // Text nothing was ever indexed from: in the library, readable, and invisible to every
+        // answer built on it. Named rather than counted -- it should be zero, and a name is what
+        // lets somebody check the document came back rather than trust that it did.
+        for (const o of reindexOrphans(db)) console.warn(`[library] re-indexing "${o.title}", which held text no chunk was built from`);
       } catch (err) {
         console.error("[library] drop folder scan failed:", err);
       }
