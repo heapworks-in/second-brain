@@ -24,6 +24,9 @@ export function createOllamaGistProvider(url: string, model: string): GistProvid
           model,
           stream: false,
           keep_alive: KEEP_ALIVE,
+          // A gist is one paragraph. Thinking about it first costs minutes on a model whose
+          // thinking is on by default, and changes the paragraph not at all.
+          think: false,
           options: { temperature: 0.2, num_predict: 160 },
           messages: [
             { role: "system", content: SYSTEM },

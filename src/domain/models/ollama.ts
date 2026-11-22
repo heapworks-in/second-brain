@@ -8,9 +8,18 @@ export interface RuntimeModel {
   size: number;
 }
 
-/** Long, because a 26B model answering over a whole transcript is minutes — but finite, because
- * the job queue runs one job at a time and must not stall behind one meeting forever. */
-const ANSWER_TIMEOUT_MS = 10 * 60 * 1000;
+/**
+ * Long, because a 26B model answering over a whole transcript is minutes — but finite, because
+ * the job queue runs one job at a time and must not stall behind one meeting forever.
+ *
+ * Under five minutes on purpose, and this is not a preference. Node's fetch gives up waiting for
+ * response headers after 300 seconds, and a non-streamed answer sends no headers until the whole
+ * answer is written -- so a budget larger than that is a budget the platform will not honour.
+ * What it produced instead was `fetch failed` at 305 seconds: the wrong error, naming the wrong
+ * thing, from a limit nobody here had chosen. Four minutes is a limit this code actually owns,
+ * and it fails saying so.
+ */
+const ANSWER_TIMEOUT_MS = 4 * 60 * 1000;
 /** Reachability is a page-load question: it has to answer or be reported down, quickly. */
 const PROBE_TIMEOUT_MS = 2000;
 
@@ -24,10 +33,36 @@ const PROBE_TIMEOUT_MS = 2000;
  */
 const KEEP_ALIVE = "10m";
 
+/**
+ * No chain of thought.
+ *
+ * `gemma4:26b` -- the model this machine runs -- has a thinking mode, and its default is *on*.
+ * Nothing here wants it: every call is schema-constrained, so the answer is a filled-in shape,
+ * and the reasoning is generated, paid for and thrown away. The cost is not marginal. The same
+ * question over the same sources took 2.6 seconds with this off and over 305 seconds with it on,
+ * where it did not finish at all -- it died against Node's 300-second header limit and reached
+ * the user as `fetch failed`.
+ *
+ * Sent to every model, because a runtime that has never heard of thinking ignores it, and the
+ * one that has must be told. A runtime old enough to reject the field outright is handled by the
+ * retry below rather than by a version check: what matters is whether this request worked.
+ */
+const NO_THINKING = { think: false };
+
 async function fetchJson(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
-  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw new Error(`the runtime answered ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) throw new Error(`the runtime answered ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    // `fetch failed` and `TimeoutError` both reach a caller as something that could be anything
+    // -- the runtime being down, the network, a bug here. Named, because the answer to a model
+    // that will not answer in time is a different one from the answer to a model that is off.
+    if (err instanceof Error && (err.name === "TimeoutError" || err.message === "fetch failed")) {
+      throw new Error(`the runtime did not answer within ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
+  }
 }
 
 const TagsResponse = z.object({
@@ -79,11 +114,19 @@ export function createOllamaChatProvider(url: string, model: string): ChatProvid
           { role: "user", content: req.user },
         ],
       };
-      const answer = await fetchJson(`${url}/api/chat`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }, ANSWER_TIMEOUT_MS);
+      const post = (extra: Record<string, unknown>) =>
+        fetchJson(`${url}/api/chat`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...body, ...extra }),
+        }, ANSWER_TIMEOUT_MS);
+      // One retry without the field, for a runtime too old to know it. Only ever the one, and
+      // only for a refusal of the request itself: a model that is simply slow must not be asked
+      // the same question twice and charged for both.
+      const answer = await post(NO_THINKING).catch((err: unknown) => {
+        if (err instanceof Error && /answered 4\d\d/.test(err.message)) return post({});
+        throw err;
+      });
 
       const parsed = z.object({ message: z.object({ content: z.string() }) }).safeParse(answer);
       if (!parsed.success) throw new Error("the runtime answered in a shape this version does not understand");
