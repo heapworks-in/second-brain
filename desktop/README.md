@@ -143,6 +143,7 @@ rm -rf .next/standalone/helper
 mkdir -p .next/standalone/helper
 rsync -a --exclude='.build' helper/ .next/standalone/helper/
 node desktop/scripts/bundle-externals.mjs # see note below -- not optional
+node scripts/postbuild.mjs --payload      # see note below -- fails the build if it finds your home dir
 
 # the Chrome adaptor, copied in from the sibling repo -- see note below
 rm -rf desktop/build/extension
@@ -150,9 +151,12 @@ mkdir -p desktop/build
 rsync -a ../sb-adaptors/slack/extension/ desktop/build/extension/
 
 cd desktop
-cargo tauri build                       # .app + .dmg under src-tauri/target/release/bundle/
+# RUSTFLAGS is not optional either -- see note below
+RUSTFLAGS="--remap-path-prefix=$HOME=/build" cargo tauri build
+cd .. && node scripts/postbuild.mjs --app \
+  "desktop/src-tauri/target/release/bundle/macos/Second Brain.app"
 
-cd .. && ./desktop/scripts/smoke-test.sh  # REQUIRED before publishing
+./desktop/scripts/smoke-test.sh         # REQUIRED before publishing
 ```
 
 **Run `smoke-test.sh` before every release.** It extracts the built `.app`'s payload to a directory
@@ -201,7 +205,24 @@ sufficient. This ballooned a release from ~120MB to over 5GB before it was caugh
 deletion moved out of this file and into the build. A step only a README enforces is a step that
 gets skipped once.
 
-The same hook scrubs the build machine's repo path out of `server.js` and
+`RUSTFLAGS="--remap-path-prefix=$HOME=/build"` deals with a third source of the builder's name,
+and the least expected one: rustc records the source path of every crate it compiles so panic
+messages can name a file and line, so a release binary held `~/.cargo/registry/...` 375 times.
+Cargo's own `trim-paths` would be the declarative fix but is still unstable as of 1.96, which is
+why the flag lives on the command line -- and why `postbuild.mjs --app` greps the finished bundle,
+binary included, and throws. The flag can be forgotten; the check cannot.
+
+`node scripts/postbuild.mjs --payload` runs the same hook again, because the copy steps above
+happen *after* `npm run build` and bring fresh files in with them. That is not hypothetical: 0.9.2's
+payload was clean at build time and had four leaking files by the time the dmg was about to be cut,
+all of them node-gyp scratch (`Makefile`, `config.gypi`, `gyp-mac-tool`) carrying the builder's nvm
+prefix, `~/.npm` and `~/.npmrc`. The hook deletes any `node_modules/**/build/` holding no `.node`
+at all -- better-sqlite3 resolves its addon from `prebuilds/`, so its `build/` never produced
+anything -- and then greps the whole payload for the builder's home directory and throws if it
+finds it. Verified after pruning: all seven `serverExternalPackages` still resolve from an isolated
+directory and better-sqlite3 opens a database with sqlite-vec loaded.
+
+The hook also scrubs the build machine's repo path out of `server.js` and
 `.next/required-server-files.json`. `next build` records where it ran in four build-provenance
 fields (`appDir`, `config.repoRoot`, `config.turbopack.root`, `config.outputFileTracingRoot`), and
 since the dmg is published publicly those fields hand out the builder's macOS username. Nothing

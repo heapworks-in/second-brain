@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.9.1"
+version = "0.9.2"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -25,3 +25,12 @@ tauri = { version = "2.11.3", features = ["tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+
+# Rust embeds the source path of every crate it compiles so panic messages can name a file and
+# line -- which in a release means ~/.cargo/registry/... appears a few hundred times in the binary,
+# handing the builder's macOS username to anyone who runs `strings` on a published dmg. Cargo's own
+# `trim-paths` would fix this declaratively but is still unstable as of 1.96, so the release build
+# passes `--remap-path-prefix` instead (see desktop/README.md) and
+# `scripts/postbuild.mjs --app` refuses to let a binary through that still carries the path.
+[profile.release]
+strip = true
