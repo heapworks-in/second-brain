@@ -65,15 +65,11 @@ if args.contains("--slack") {
         exit(1)
     }
     print("Slack is showing: \(view)")
-    if mine.isEmpty {
-        print("""
-        No names to match, so nothing is treated as yours and no questions of yours can be read --
-        only the Activity view's asks. Pass --me "Your Slack Name" to try a spelling. The helper
-        gets this list from the server: Settings, the spellings of your own name, the same list a
-        tracker import matches an Owner column against.
-        """)
-    }
+    // Read before anything else is reported, because every line below depends on it: who you are
+    // is what separates your own unanswered questions from everybody else's.
     let reading = slack.read(mine: mine) ?? Reading(observations: [], conversations: [])
+    print("you are: \(slack.whoami ?? "unknown -- Slack is no longer labelling its own user menu")"
+        + (mine.isEmpty ? "" : ", plus \(mine.sorted().joined(separator: ", ")) from the command line"))
     let observations = reading.observations
     print("\(observations.count) message(s) readable (Slack renders a viewport, not a feed)")
     for o in observations.prefix(10) {
@@ -93,9 +89,12 @@ if args.contains("--slack") {
     if !slack.sendersSeen.isEmpty {
         let names = slack.sendersSeen.sorted()
         print("names on the messages here: \(names.joined(separator: ", "))")
-        if !names.contains(where: { mine.contains($0.lowercased()) }) {
-            print("none of those match \(mine.isEmpty ? "anything (no names given)" : mine.sorted().joined(separator: ", "))"
-                + " -- whichever is you belongs in Settings, spelled exactly as it reads above")
+        let claimed = mine.union(slack.whoami.map { [$0.lowercased()] } ?? [])
+        if !names.contains(where: { claimed.contains($0.lowercased()) }) {
+            // Not necessarily wrong -- a channel where you have not spoken looks exactly like
+            // this -- but it is the first thing to check when your own questions never appear.
+            print("none of those is you (\(claimed.sorted().joined(separator: ", ")))"
+                + " -- either you have not spoken here, or Slack writes your name differently on rows")
         }
     }
     if !slack.skipped.isEmpty {
@@ -128,6 +127,18 @@ if args.contains("--slack") {
 // `message-list_` prefix; a separator read as a message becomes "Friday, November 6th" presented as
 // something a colleague is waiting on.
 if args.contains("--slack-self-check") {
+    // Who I am, read off Slack's own account control rather than typed into Settings. Captured
+    // verbatim from a real workspace; the negatives are the other pop-up buttons in that window,
+    // any of which read as a person would claim somebody else's messages as mine.
+    for (label, want) in [("User: Avinash Vundyala", "Avinash Vundyala"), ("User: vanhack-cecilia", "vanhack-cecilia"),
+                          ("User:   Spaced Name  ", "Spaced Name"), ("Workspace: Acme", nil), ("User:", nil), ("", nil)]
+        as [(String, String?)] {
+        let got = SlackReader.displayName(fromUserButton: label)
+        if got != want {
+            print("FAIL whoami \"\(label)\": expected \(want ?? "nil"), got \(got ?? "nil")"); exit(1)
+        }
+    }
+
     // Two id schemes, both captured verbatim from a real workspace. The Activity one separates its
     // timestamp with a HYPHEN, and reading it with the channel view's underscore pattern is exactly
     // why the first live run against a view holding eleven mentions reported nothing at all.

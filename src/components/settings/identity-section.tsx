@@ -14,9 +14,14 @@ import { Button, Input, SectionHeading } from "../ui";
  * me in three different trackers, and Slack is a fourth spelling again.
  *
  * The import asks for this the first time; it lives here so it can be corrected without
- * importing anything, and so a name added later applies by itself. The Slack reader is handed the
- * same list, which is why the copy names it: a missing spelling there costs the questions you
- * asked, silently, and nothing else in the app would ever mention it.
+ * importing anything, and so a name added later applies by itself.
+ *
+ * Slack used to be the other reason this existed, and no longer is: the reader takes my display
+ * name off Slack's own account control, per window, so a workspace that spells me differently
+ * gets the spelling it uses. Asking for it here was the wrong answer to a question Slack was
+ * already answering out loud -- and wrong in the worst way, because a typed spelling Slack does
+ * not use costs every question I asked, silently and forever. The list is still unioned in, for
+ * a name on old rows that Slack has since changed.
  */
 export function IdentitySection({ initial }: { initial: string[] }) {
   const [names, setNames] = useState(initial);
@@ -60,8 +65,7 @@ export function IdentitySection({ initial }: { initial: string[] }) {
       <SectionHeading>You</SectionHeading>
       <p className="text-[12.5px] text-fg-muted m-0">
         How your name is written where something else wrote it. Tracker rows naming one of these are yours; every other row is tracked but stays out
-        of your planner, your desk and your week. Add your Slack display name too, and the questions you asked there get chased as well as the ones
-        you owe.
+        of your planner, your desk and your week. Slack needs nothing here — the reader takes your display name from Slack itself.
       </p>
       <div className="flex items-center gap-2 flex-wrap">
         {names.map((name) => (
@@ -78,7 +82,7 @@ export function IdentitySection({ initial }: { initial: string[] }) {
             </button>
           </span>
         ))}
-        {names.length === 0 && <span className="text-[12.5px] text-fg-faint">No names yet. The first import will ask, and Slack needs one too.</span>}
+        {names.length === 0 && <span className="text-[12.5px] text-fg-faint">No names yet. The first import will ask.</span>}
       </div>
       <div className="flex items-center gap-2">
         <Input

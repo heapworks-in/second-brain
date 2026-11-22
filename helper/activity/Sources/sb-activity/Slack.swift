@@ -74,6 +74,11 @@ final class SlackReader {
     /// and the only way to tell is to see the names Slack is actually putting on these rows.
     private(set) var sendersSeen: Set<String> = []
 
+    /// My display name as Slack last showed it, for the diagnostic to print. Nil means Slack had
+    /// no window, or has changed where it writes it down -- which is worth seeing, because the
+    /// reader goes on working and silently stops claiming anything as mine.
+    private(set) var whoami: String?
+
     // MARK: - The two id schemes
 
     /// An Activity row: `at_channel-C0A1B2C3D-1794429455.100200` -- what kind of activity, then the
@@ -106,6 +111,8 @@ final class SlackReader {
     private static let teamId = try! NSRegularExpression(pattern: #"/client/(T[A-Z0-9]+)"#)
     /// `your-next-job (Channel) - Acme - Slack` -- the name, then what kind of thing it is.
     private static let windowTitle = try! NSRegularExpression(pattern: #"^(.+?) \(([^)]+)\)"#)
+    /// Slack's own account control, which is the one place it writes your display name down.
+    private static let userButton = try! NSRegularExpression(pattern: #"^User:\s*(.+?)\s*$"#)
     private static let nonSlug = try! NSRegularExpression(pattern: #"[^a-z0-9]+"#)
     private static let whitespace = try! NSRegularExpression(pattern: #"\s+"#)
 
@@ -150,13 +157,18 @@ final class SlackReader {
     /// same list a tracker import matches an Owner column against). Empty means nothing is claimed
     /// as yours: without it, somebody else's message filed as one of mine would vanish from the
     /// half of the desk that owes them a reply, which is worse than this feature not working.
-    func read(mine: Set<String> = []) -> Reading? {
+    func read(mine suppliedNames: Set<String> = []) -> Reading? {
         guard AXIsProcessTrusted(), let app = Self.slackApp() else { return nil }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         ask(axApp)
 
         guard let window = Self.window(axApp) else { return nil }
         let team = Self.team(window)
+        // Union rather than replacement: the server's list is still the place to add a spelling
+        // Slack does not use -- an old display name on historic rows, say -- and an empty one is
+        // no longer the reason the outbound half reads nothing.
+        whoami = Self.me(window)
+        let mine = suppliedNames.union(whoami.map { [$0.lowercased()] } ?? [])
 
         var inbound: [Message] = []
         var conversation: [Message] = []
@@ -372,6 +384,38 @@ final class SlackReader {
             team = String(url[r])
         }
         return team
+    }
+
+    /// My own display name, read off Slack's account control rather than configured.
+    ///
+    /// Telling my messages from everybody else's is the whole basis of the outbound half of this
+    /// -- the questions I asked that nobody answered -- and there is no "this one is yours" flag
+    /// on a rendered row to read it from. It used to be a setting, which was the wrong answer to a
+    /// question Slack was already answering out loud: its user menu is an `AXPopUpButton` whose
+    /// title is `User: <display name>`, and that is the same name it puts on my rows.
+    ///
+    /// Per-window, so a workspace where I am "firstname-lastname" and one where I am my own name
+    /// each get the spelling that workspace actually uses -- which no single setting could do, and
+    /// which is why a typed name was not merely inconvenient but wrong. Typing it was also silent
+    /// when wrong: the reader works perfectly and reports nothing, forever.
+    static func me(_ window: AXUIElement) -> String? {
+        var found: String?
+        walk(window) { el, _ in
+            guard found == nil,
+                  string(el, kAXRoleAttribute as String) == "AXPopUpButton",
+                  let label = string(el, kAXTitleAttribute as String) ?? string(el, kAXDescriptionAttribute as String),
+                  let name = displayName(fromUserButton: label) else { return }
+            found = name
+        }
+        return found
+    }
+
+    /// The name out of the account control's label, which is the only part of the above that can
+    /// be checked without a running Slack. Anything else on a pop-up button -- a workspace
+    /// switcher, a channel's own menu -- must not be mistaken for a person.
+    static func displayName(fromUserButton label: String) -> String? {
+        guard let name = capture(userButton, label, 1), !name.isEmpty else { return nil }
+        return name
     }
 
     /// Where Slack says I am, from its window title: `your-next-job (Channel) - Acme - Slack`, or a
