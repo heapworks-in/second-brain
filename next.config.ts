@@ -20,8 +20,9 @@ const nextConfig: NextConfig = {
   // -- found the hard way, after it silently stopped mattering -- `next build` defaults to
   // Turbopack, and Turbopack's standalone copy step does not consult this filtered result, so it
   // is NOT sufficient by itself to keep desktop/ out of .next/standalone. The actual fix is the
-  // mandatory `rm -rf .next/standalone/desktop` in desktop/README.md's build steps, run after
-  // every build. Ballooned a shipped release from ~120MB to over 5GB before that was caught.
+  // `postbuild` hook in package.json (`scripts/postbuild.mjs`), which deletes that directory after
+  // every build -- it used to be a mandatory step in desktop/README.md, and living only in a README
+  // is how it came to be skipped: it ballooned a shipped release from ~120MB to over 5GB.
   //
   // `helper/` (the Swift activity tracker and meeting recorder) isn't part of the server's module
   // graph at all -- it's built and invoked by scripts/brain.sh as separate binaries -- yet the same

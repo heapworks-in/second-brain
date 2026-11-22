@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3141",
     "build": "next build",
+    "postbuild": "node scripts/postbuild.mjs",
     "start": "next start -p 3141",
     "lint": "eslint",
     "test": "vitest run",

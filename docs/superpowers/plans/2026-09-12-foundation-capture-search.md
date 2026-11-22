@@ -100,7 +100,7 @@ second-brain/
 The project folder already has `docs/` and `.git`, which create-next-app refuses to write into, so scaffold beside it and copy.
 
 ```bash
-cd /Users/avinashvundyala/Documents/github/second-brain
+cd "$(git rev-parse --show-toplevel)"
 npx create-next-app@latest ../second-brain-scaffold --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-npm --yes --skip-install
 rsync -a --exclude .git --exclude .gitignore ../second-brain-scaffold/ ./
 cat ../second-brain-scaffold/.gitignore >> .gitignore

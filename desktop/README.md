@@ -142,7 +142,6 @@ cp scripts/brain.sh .next/standalone/scripts/brain.sh
 rm -rf .next/standalone/helper
 mkdir -p .next/standalone/helper
 rsync -a --exclude='.build' helper/ .next/standalone/helper/
-rm -rf .next/standalone/desktop           # see note below -- not optional
 node desktop/scripts/bundle-externals.mjs # see note below -- not optional
 
 # the Chrome adaptor, copied in from the sibling repo -- see note below
@@ -188,15 +187,28 @@ newer code -- which is how a fixed Slack selector reaches every machine.
 A build without that repo checked out still produces a working app; `smoke-test.sh` fails it
 rather than letting a release ship with an empty Settings > Slack.
 
-The `rm -rf .next/standalone/desktop` step is required, not cleanup. `next build` defaults to
-Turbopack, whose file tracer swept this entire directory (including `src-tauri/target/`, a
-multi-GB Rust build directory) into the standalone bundle wholesale -- `outputFileTracingExcludes`
-in `next.config.ts` correctly filters the `.nft.json` trace files themselves (verifiable after a
-build), but the actual standalone copy step doesn't consult that filtered result for Turbopack
-builds, so the exclude is effectively a no-op here despite looking like it worked. Confirmed by
-directly deleting the directory after a build and it not reappearing on its own -- it's a one-time
-copy during `next build`, not a live process, so removing it after every build is safe and
-sufficient. Ballooned a release from ~120MB to over 5GB before this was caught.
+`.next/standalone/desktop` must not ship, and `npm run build`'s `postbuild` hook
+(`scripts/postbuild.mjs`) deletes it, so this recipe no longer carries the step. The reason is
+worth keeping. `next build` defaults to Turbopack, whose file tracer swept this entire directory
+(including `src-tauri/target/`, a multi-GB Rust build directory holding a complete prior copy of
+Second Brain.app, which holds its own `server/` payload in turn) into the standalone bundle
+wholesale. `outputFileTracingExcludes` in `next.config.ts` correctly filters the `.nft.json` trace
+files themselves -- verifiable after a build -- but the standalone copy step doesn't consult that
+filtered result for Turbopack builds, so the exclude is effectively a no-op here despite looking
+like it worked. Confirmed by directly deleting the directory after a build and it not reappearing:
+it's a one-time copy during `next build`, not a live process, so removing it afterwards is safe and
+sufficient. This ballooned a release from ~120MB to over 5GB before it was caught, which is why the
+deletion moved out of this file and into the build. A step only a README enforces is a step that
+gets skipped once.
+
+The same hook scrubs the build machine's repo path out of `server.js` and
+`.next/required-server-files.json`. `next build` records where it ran in four build-provenance
+fields (`appDir`, `config.repoRoot`, `config.turbopack.root`, `config.outputFileTracingRoot`), and
+since the dmg is published publicly those fields hand out the builder's macOS username. Nothing
+reads them at runtime -- `server.js` resolves `dir` from `__dirname`, chdir's to it, and passes its
+own inlined config object to `startServer`; neither `next-server.js` nor `start-server.js` reads
+`appDir` at all. The hook fails the build if either file still contains the path, so a release
+cannot quietly carry it.
 
 The `helper/` copy above exists for the same reason in reverse: the tracer includes only some of
 `helper/`'s files (never `Package.swift`), so a build relying on the tracer alone ships a broken,
