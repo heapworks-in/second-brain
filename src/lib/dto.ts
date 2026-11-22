@@ -381,6 +381,10 @@ export interface PlannerWeekDayDTO {
   working: boolean;
   meetings: ActivityMeetingDTO[];
   due: TaskDTO[];
+  /** The day's plan, with each task's sessions, so a week can be drawn as a calendar rather
+   * than seven lists. Already read to compute the capacity below -- it was simply never
+   * handed out. Empty on a non-working day, which is not planned against at all. */
+  plan: PlanTaskDTO[];
   capacity: {
     freeMinutes: number;
     plannedMinutes: number;
@@ -397,6 +401,9 @@ export interface PlannerWeekDayDTO {
 
 export interface PlannerWeekDTO {
   start: string;
+  /** The working day, "HH:MM-HH:MM". The grid draws these hours, widened by anything in the
+   * week that falls outside them. */
+  workHours: string;
   /** The person's own actual-over-estimate multiplier, read once for the whole week — never
    * once per day — and null below `DRIFT_MIN_PAIRS`, the same honesty rule `CapacityDTO.drift`
    * follows. Each day's `capacity.forecastMinutes` is this same figure applied to that day's

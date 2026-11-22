@@ -133,6 +133,7 @@ export function plannerWeek(db: DB, start: string, now: Date = new Date()): Plan
   const drift = driftFactor(estimateActualPairs(db));
   return {
     start,
+    workHours,
     drift,
     days: Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((date) => {
       const meetings = byDay.get(date) ?? [];
@@ -147,6 +148,7 @@ export function plannerWeek(db: DB, start: string, now: Date = new Date()): Plan
         working,
         meetings,
         due: open.filter((t) => t.dueDate === date),
+        plan: dayPlan,
         capacity: {
           freeMinutes: working ? freeMinutes(meetings, workHours, date) : 0,
           plannedMinutes: planned,

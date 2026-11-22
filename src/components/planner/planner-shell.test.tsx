@@ -91,7 +91,7 @@ describe("PlannerShell", () => {
   });
 
   it("moves the selection with the route", () => {
-    render(<PlannerShell view="week" today="2026-09-22" initial={{ start: "2026-09-21", drift: null, days: [] }} />);
+    render(<PlannerShell view="week" today="2026-09-22" initial={{ workHours: "09:00-18:00", start: "2026-09-21", drift: null, days: [] }} />);
     expect(tabs().map((t) => t.selected)).toEqual(["false", "true", "false"]);
   });
 
@@ -241,10 +241,10 @@ describe("PlannerShell", () => {
   });
 
   it("plans a prompt-bar task on today while the week on screen holds it, else on its first day", () => {
-    render(<PlannerShell view="week" today="2026-09-22" initial={{ start: "2026-09-21", drift: null, days: [] }} />);
+    render(<PlannerShell view="week" today="2026-09-22" initial={{ workHours: "09:00-18:00", start: "2026-09-21", drift: null, days: [] }} />);
     expect(readPlanDate()).toBe("2026-09-22");
     cleanup();
-    render(<PlannerShell view="week" today="2026-09-22" initial={{ start: "2026-10-05", drift: null, days: [] }} />);
+    render(<PlannerShell view="week" today="2026-09-22" initial={{ workHours: "09:00-18:00", start: "2026-10-05", drift: null, days: [] }} />);
     expect(readPlanDate()).toBe("2026-10-05");
   });
 });

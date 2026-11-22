@@ -2,9 +2,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { WeekView } from "./week-view";
+import { weekHours } from "./week-grid";
 import { resetFocusStore } from "../focus/focus-store";
 import { PatchTaskBody } from "@/lib/validation";
-import type { ActivityMeetingDTO, PlannerWeekDTO, TaskDTO } from "@/lib/dto";
+import type { ActivityMeetingDTO, BlockDTO, PlannerWeekDTO, PlanTaskDTO, TaskDTO } from "@/lib/dto";
 
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: nav.push, refresh: () => {} }), usePathname: () => "/planner/week" }));
@@ -26,47 +27,53 @@ function meeting(over: Partial<ActivityMeetingDTO> & { id: number; title: string
   };
 }
 
+/** A planned task holding one session, which is what puts it on the grid rather than the rail. */
+function planned(over: { id: number; title: string; startsAt: string; minutes: number }): PlanTaskDTO {
+  const block: BlockDTO = { id: over.id * 100, taskId: over.id, startsAt: over.startsAt, minutes: over.minutes, spentMinutes: 0 };
+  return { ...task, id: over.id, title: over.title, planId: over.id, blocks: [block] };
+}
+
 function week(): PlannerWeekDTO {
   return {
     start: START,
+    workHours: "09:00-18:00",
     drift: null,
     days: Array.from({ length: 7 }, (_, i) => {
       const date = `2026-09-${String(21 + i).padStart(2, "0")}`;
-      // Monday sits inside its hours; Tuesday is overbooked, so the two tones are both on screen.
       const plannedMinutes = date === START ? 75 : date === "2026-09-22" ? 600 : 0;
-      // 2026-09-21 is a Monday, so the first five days (Mon-Fri) are working days and the last
-      // two (Sat, Sun) are not — the payload zeroes a non-working day's capacity across the
-      // board, the same way the server does, but `WeekView` reads `working` directly rather
-      // than infer it from zeros.
+      // 2026-09-21 is a Monday, so Mon-Fri are working days and the weekend is not.
       const working = i < 5;
       return {
         date,
         working,
         meetings: [],
+        plan: [],
         due: date === START ? [task] : [],
-        // `leftTodayMinutes` is what the column actually reads; it matches `freeMinutes` here
-        // because none of these fixtures is testing the clock — the case where they differ has
-        // its own test below.
-        capacity: { freeMinutes: working ? 540 : 0, plannedMinutes, blockedMinutes: 0, forecastMinutes: null, leftTodayMinutes: working ? 540 : 0 },
+        capacity: {
+          freeMinutes: working ? 540 : 0,
+          plannedMinutes: working ? plannedMinutes : 0,
+          blockedMinutes: 0,
+          forecastMinutes: null,
+          leftTodayMinutes: working ? 540 : 0,
+        },
       };
     }),
   };
 }
 
-function mount(): { fetchMock: ReturnType<typeof vi.fn>; onRefresh: ReturnType<typeof vi.fn> } {
+function mount(w: PlannerWeekDTO = week()): { fetchMock: ReturnType<typeof vi.fn> } {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: task.id }), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
-  const onRefresh = vi.fn();
-  render(<WeekView week={week()} today={TODAY} onRefresh={onRefresh} />);
-  // The store makes one `/api/focus` call for the whole page on mount, not one per row; cleared
-  // so the assertions below only see the calls a test's own action makes.
+  render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
   fetchMock.mockClear();
-  return { fetchMock, onRefresh };
+  return { fetchMock };
 }
 
-/** The column a weekday name sits in: the pane the drop handler is hung on. */
-function column(weekday: string): HTMLElement {
-  return screen.getByText(weekday).closest(".pane") as HTMLElement;
+const day = (date: string): HTMLElement => screen.getByTestId(`week-day-${date}`);
+
+/** Where a block sits and how tall it is, in pixels down the column. */
+function box(el: HTMLElement): { top: number; height: number } {
+  return { top: Number.parseFloat(el.style.top), height: Number.parseFloat(el.style.height) };
 }
 
 beforeEach(() => {
@@ -80,10 +87,36 @@ afterEach(() => {
   nav.push.mockClear();
 });
 
+describe("weekHours", () => {
+  it("covers the working day when nothing falls outside it", () => {
+    expect(weekHours(week().days, "09:00-18:00")).toEqual({ dayStart: 9, dayEnd: 18 });
+  });
+
+  /* One range for all seven columns, never one each: columns whose hours differ cannot be read
+   * across, which is the only thing a week view is for. */
+  it("widens for an early meeting, and widens every column with it", () => {
+    const w = week();
+    w.days[2].meetings = [meeting({ id: 1, title: "Standup", startsAt: "2026-09-23T07:30:00", endsAt: "2026-09-23T08:00:00" })];
+    expect(weekHours(w.days, "09:00-18:00").dayStart).toBe(7);
+  });
+
+  it("widens for a session running past the end of the day", () => {
+    const w = week();
+    w.days[0].plan = [planned({ id: 9, title: "Late push", startsAt: "2026-09-21T19:00:00", minutes: 90 })];
+    expect(weekHours(w.days, "09:00-18:00").dayEnd).toBe(21);
+  });
+
+  it("ignores an all-day event, which has no hour to widen to", () => {
+    const w = week();
+    w.days[1].meetings = [meeting({ id: 2, title: "Holiday", allDay: true, startsAt: "2026-09-22T00:00:00", endsAt: "2026-09-23T00:00:00" })];
+    expect(weekHours(w.days, "09:00-18:00")).toEqual({ dayStart: 9, dayEnd: 18 });
+  });
+});
+
 describe("WeekView", () => {
   it("re-dates a task dropped on another column", () => {
     const { fetchMock } = mount();
-    fireEvent.drop(column("Wed"), { dataTransfer: { getData: () => String(task.id) } });
+    fireEvent.drop(day("2026-09-23"), { dataTransfer: { getData: () => String(task.id) } });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -91,156 +124,91 @@ describe("WeekView", () => {
     expect(init.method).toBe("PATCH");
     const body: unknown = JSON.parse(String(init.body));
     expect(body).toEqual({ dueDate: "2026-09-23" });
-    // The column sends what the route accepts, not something the route would 400.
     expect(PatchTaskBody.safeParse(body).success).toBe(true);
   });
 
-  it("marks a day that has time blocked on it", () => {
+  /* The whole point of the grid: a meeting at nine and a meeting at five no longer look alike.
+   * 09:00 is the top of the column and every later hour is 60 minutes further down, scaled. */
+  it("puts a meeting where its time actually falls", () => {
     const w = week();
-    w.days[1].capacity.blockedMinutes = 80;
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
-    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
-    const dot = within(column("Tue")).getByRole("img", { name: "1h 20m blocked" });
-    expect(dot.getAttribute("title")).toBe("1h 20m blocked");
-    // A day with nothing blocked carries no dot at all.
-    expect(within(column("Wed")).queryByRole("img", { name: /blocked/ })).toBeNull();
+    w.days[2].meetings = [meeting({ id: 1, title: "Design review", startsAt: "2026-09-23T14:00:00", endsAt: "2026-09-23T15:30:00" })];
+    mount(w);
+
+    const block = within(day("2026-09-23")).getByTitle("Design review, 14:00–15:30");
+    // Five hours past the 09:00 start, ninety minutes long, at 0.6px a minute.
+    expect(box(block)).toEqual({ top: 5 * 60 * 0.6, height: 90 * 0.6 });
   });
 
-  it("ignores a drop that carries no task", () => {
-    const { fetchMock } = mount();
-    fireEvent.drop(column("Wed"), { dataTransfer: { getData: () => "" } });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("says what each day already holds against the time it has", () => {
-    mount();
-    expect(within(column("Mon")).getByText("1h 15m / 9h")).toBeTruthy();
-  });
-
-  it("colours a day that is over its hours", () => {
-    mount();
-    expect(within(column("Mon")).getByText("1h 15m / 9h").className).toContain("text-fg-muted");
-    expect(within(column("Tue")).getByText("10h / 9h").className).toContain("text-warn");
-  });
-
-  // F1: the Day view's line and meter both judge a day by `overBasis` — the forecast when one
-  // exists, never the bare plan — and the Week was still colouring by the bare plan alone, so
-  // the same day could read calm here and overrun there. `capacityTone` reads whichever figure
-  // is truly bigger, so a low `plannedMinutes` with a `forecastMinutes` scaled past the window
-  // must colour by the forecast, not slip through as "fg-muted" on the strength of the plan.
-  it("colours a column by the forecast, not the bare plan, once the week has one (F1)", () => {
+  it("puts a planned session on the grid too, and sends it to that day", () => {
     const w = week();
-    w.drift = 2;
-    // Monday: 75 planned (inside its 9h window) but a forecast of 700 (75 * drift-ish figure,
-    // set directly here) blows well past it — the bare plan alone would read calm.
-    w.days[0].capacity.forecastMinutes = 700;
-    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
-    const mon = within(column("Mon")).getByText("1h 15m / 9h");
-    expect(mon.className).not.toContain("text-fg-muted");
-    expect(mon.className).toContain("text-danger");
+    w.days[0].plan = [planned({ id: 9, title: "Write the spec", startsAt: "2026-09-21T11:00:00", minutes: 60 })];
+    mount(w);
+
+    const block = within(day(START)).getByTitle("Write the spec, 11:00–12:00");
+    expect(box(block)).toEqual({ top: 2 * 60 * 0.6, height: 60 * 0.6 });
+    expect(block.getAttribute("href")).toBe(`/planner?date=${START}`);
   });
 
-  it("still colours by the bare plan when the week has no drift to forecast with", () => {
+  /* A session and a meeting at the same hour are laid out together, so neither hides under the
+   * other -- the failure that makes an overbooked day look free. */
+  it("shares the column between a session and a meeting that overlap", () => {
     const w = week();
-    w.drift = null;
-    w.days[0].capacity.forecastMinutes = 700; // never read: null drift means no forecast at all
-    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
-    expect(within(column("Mon")).getByText("1h 15m / 9h").className).toContain("text-fg-muted");
+    w.days[2].meetings = [meeting({ id: 1, title: "Design review", startsAt: "2026-09-23T11:00:00", endsAt: "2026-09-23T12:00:00" })];
+    w.days[2].plan = [planned({ id: 9, title: "Write the spec", startsAt: "2026-09-23T11:30:00", minutes: 60 })];
+    mount(w);
+
+    const column = day("2026-09-23");
+    const meet = within(column).getByTitle("Design review, 11:00–12:00");
+    const session = within(column).getByTitle("Write the spec, 11:30–12:30");
+    // Two columns of equal width, the second offset by half.
+    expect(meet.style.width).toBe("calc(50% - 3px)");
+    expect(meet.style.left).toBe("calc(0% + 2px)");
+    expect(session.style.width).toBe("calc(50% - 3px)");
+    expect(session.style.left).toBe("calc(50% + 2px)");
   });
 
-  it("shows a non-working day as a quiet gap: the date, and nothing about capacity", () => {
-    mount();
-    const sat = column("Sat");
-    // The date and weekday are still there.
-    expect(within(sat).getByText("26")).toBeTruthy();
-    expect(within(sat).getByText("Sat")).toBeTruthy();
-    // Nothing about capacity: not a figure, not "0h", not a blocked dot.
-    expect(within(sat).queryByText(/\/ /)).toBeNull();
-    expect(within(sat).queryByText(/0h/)).toBeNull();
-    expect(within(sat).queryByRole("img", { name: /blocked/ })).toBeNull();
-    // F6: a non-working day with nothing on it is a quiet gap, not a card that still finds
-    // something to say — "Nothing yet" belongs to a working day nobody has planned.
-    expect(within(sat).queryByText("Nothing yet")).toBeNull();
-  });
-
-  it("leaves an empty working day empty, rather than saying so seven times", () => {
-    mount();
-    // Wednesday: working, no meetings, no due tasks. A column with nothing in it already reads
-    // as having nothing in it; the figure and the sentence were noise around the days that do.
-    const wed = within(column("Wed"));
-    expect(wed.queryByText("Nothing yet")).toBeNull();
-    expect(wed.queryByText(/0m/)).toBeNull();
-    // Monday has something planned, so it still carries its figure.
-    expect(within(column("Mon")).getByText(/1h 15m \/ 9h/)).toBeTruthy();
-  });
-
-  it("keeps the figure on today even with nothing planned: 'what is left' is a live question", () => {
+  /* Nothing without a time pretends to a position in the grid. An all-day event placed at
+   * midnight would be a block the height of the whole column. */
+  it("keeps all-day events and due tasks out of the grid", () => {
     const w = week();
-    w.days[2].capacity.plannedMinutes = 0;
-    render(<WeekView week={w} today="2026-09-23" onRefresh={vi.fn()} />);
-    expect(within(column("Wed")).getByText(/0m \/ 9h/)).toBeTruthy();
+    w.days[1].meetings = [meeting({ id: 2, title: "Holiday", allDay: true, startsAt: "2026-09-22T00:00:00", endsAt: "2026-09-23T00:00:00" })];
+    mount(w);
+
+    expect(within(day("2026-09-22")).queryByTitle(/Holiday/)).toBeNull();
+    expect(screen.getByTitle("Holiday")).toBeTruthy();
+    expect(screen.getByTitle("Due: Draft email")).toBeTruthy();
+    expect(within(day(START)).queryByTitle(/Draft email/)).toBeNull();
   });
 
-  /** A subscribed holiday calendar puts an all-day entry in most weeks. As a row it costs the
-   * same height as a real meeting; as a chip it stops competing with one. */
-  it("shows an all-day entry as a chip, never as a row with a time", () => {
+  it("offers the day itself once a rail holds more than it can read", () => {
     const w = week();
-    w.days[2].meetings = [meeting({ id: 5, title: "Chhath Puja", allDay: true, attendees: 0 })];
-    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
-    const wed = within(column("Wed"));
-    expect(wed.getByText("Chhath Puja")).toBeTruthy();
-    expect(wed.queryByText("All day")).toBeNull();
-    expect(wed.queryByRole("list")).toBeNull();
-  });
-
-  it("offers the day itself once a column holds more meetings than it can read", () => {
-    const w = week();
-    w.days[2].meetings = Array.from({ length: 7 }, (_, i) =>
-      meeting({ id: 100 + i, title: `Sync ${i + 1}`, startsAt: `2026-09-23T0${i + 2}:00:00.000Z` }),
+    w.days[1].meetings = [1, 2, 3, 4].map((id) =>
+      meeting({ id, title: `Holiday ${id}`, allDay: true, startsAt: "2026-09-22T00:00:00", endsAt: "2026-09-23T00:00:00" }),
     );
-    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
-    const wed = within(column("Wed"));
-    expect(wed.getAllByRole("button").filter((b) => /Sync/.test(b.textContent ?? ""))).toHaveLength(4);
-    const more = wed.getByRole("link", { name: "3 more" });
-    expect(more.getAttribute("href")).toBe("/planner?date=2026-09-23");
+    mount(w);
+
+    expect(screen.getByText("1 more").getAttribute("href")).toBe("/planner?date=2026-09-22");
+    expect(screen.queryByTitle("Holiday 4")).toBeNull();
   });
 
-  it("keeps the blocked dot off a non-working day even when it has blocked minutes", () => {
-    const w = week();
-    w.days[5].capacity.blockedMinutes = 80;
-    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
-    expect(within(column("Sat")).queryByRole("img", { name: /blocked/ })).toBeNull();
-  });
-
-  it("reads today's own leftTodayMinutes, not the whole-window freeMinutes", () => {
-    // Tuesday (today) has a nine-hour window, but only 2h of it is left — the figure the
-    // column shows is the one that knows what time it is, not the one that never asks.
-    const w = week();
-    w.days[1].capacity.leftTodayMinutes = 120;
-    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
-    expect(within(column("Tue")).getByText("10h / 2h")).toBeTruthy();
-    expect(within(column("Tue")).queryByText(/9h/)).toBeNull();
-  });
-
-  it("reads a past day's whole window, not its zeroed-out leftTodayMinutes (N2)", () => {
-    // Monday is before today (Tuesday): the server reports its leftTodayMinutes as 0, since
-    // "time left" is a live figure about now and Monday's now is long gone. A past week column
-    // is a different question — what was planned against what the day had — and Monday
-    // genuinely had nine hours, so the column reads `freeMinutes`, not a zero that would paint
-    // every past working day red.
-    const w = week();
-    w.days[0].capacity.leftTodayMinutes = 0;
-    render(<WeekView week={w} today={TODAY} onRefresh={vi.fn()} />);
-    expect(within(column("Mon")).getByText("1h 15m / 9h")).toBeTruthy();
-    expect(within(column("Mon")).queryByText(/0m/)).toBeNull();
-    expect(within(column("Mon")).getByText("1h 15m / 9h").className).not.toContain("text-danger");
-  });
-
-  it("plans from the week on screen rather than from today", () => {
+  /* Seven copies of "0m / 9h" was six lines of arithmetic around the one day with anything on
+   * it. The load is a bar now, and a day with nothing planned draws none. */
+  it("shows a load bar only where something is planned", () => {
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "Task actions" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Plan for" }));
-    const days = screen.getByRole("menu", { name: "Plan for" });
-    expect((days.querySelector('[role="menuitem"]') as HTMLElement).textContent).toBe("Monday 21");
+    expect(within(screen.getByLabelText("1h 15m planned")).getByTitle("1h 15m planned")).toBeTruthy();
+    // Wednesday has nothing planned: the bar's track is there, its fill is not.
+    expect(within(screen.getAllByLabelText("0m planned")[0]).queryByTitle(/planned/)).toBeNull();
+  });
+
+  it("says a weekend is not a working day rather than claiming it is empty", () => {
+    mount();
+    expect(screen.getAllByLabelText("Not a working day")).toHaveLength(2);
+  });
+
+  it("says when the whole week holds nothing at all", () => {
+    const w = week();
+    w.days[0].due = [];
+    mount(w);
+    expect(screen.getByText("Nothing booked this week.")).toBeTruthy();
   });
 });
