@@ -211,6 +211,13 @@
       "when": 1795280241513,
       "tag": "0029_proposal_briefs",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1795309575894,
+      "tag": "0030_ask_dropped",
+      "breakpoints": true
     }
   ]
 }

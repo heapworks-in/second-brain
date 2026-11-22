@@ -59,6 +59,7 @@ export function recordAsk(
         unavailable: answer.unavailable ?? null,
         askedAt: now.toISOString(),
         source,
+        dropped: answer.dropped,
       })
       .returning({ id: askLog.id })
       .get()!;

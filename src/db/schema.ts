@@ -708,6 +708,10 @@ export const askLog = sqliteTable(
     /** null until somebody says; 1 useful, 0 not. Absent is not the same as bad, and the ranker
      * treats it that way -- most questions are never rated and must not count against anything. */
     useful: integer("useful"),
+    /** Sentences the model wrote that the sources it cited did not support, and which were
+     * therefore removed before anybody saw them. The one number here that measures the model
+     * rather than the corpus: a rate that climbs means it is reaching past what it was given. */
+    dropped: integer("dropped").notNull().default(0),
   },
   (t) => [index("ask_log_asked_idx").on(t.askedAt)],
 );

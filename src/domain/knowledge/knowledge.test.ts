@@ -58,6 +58,44 @@ describe("answerFromKnowledge", () => {
     expect(out.cited).toEqual([]);
   });
 
+  /* The grounded prompt is a request, and a request fails quietly. These two are the check that
+   * does not take the model's word for it -- which matters most for the detail a model is most
+   * willing to supply from habit: an owner, a date, a number the source nearly but not quite
+   * gives. */
+  it("removes a sentence stating something its own citation does not say", async () => {
+    corpus();
+    const out = await answerFromKnowledge(
+      t.db,
+      {
+        embed: noEmbed,
+        chat: chat({
+          answer: "Schema changes are frozen until the audit finishes [1]. Dmitri signed off the rollback [1].",
+          used: [1],
+        }),
+      },
+      "what is the state of schema changes?",
+      NOW,
+    );
+    expect(out.text).toBe("Schema changes are frozen until the audit finishes [1].");
+    expect(out.dropped).toBe(1);
+    expect(out.claims.find((c) => !c.supported)?.reason).toBe("name-not-in-source");
+  });
+
+  it("refuses when nothing the model wrote survives the check", async () => {
+    corpus();
+    const out = await answerFromKnowledge(
+      t.db,
+      { embed: noEmbed, chat: chat({ answer: "Dmitri owns the rollback and signs it off on 2026-12-01 [1].", used: [1] }) },
+      "who owns the rollback?",
+      NOW,
+    );
+    expect(out.text).toBe("");
+    expect(out.unavailable).toBe("Nothing it said could be traced to your notes");
+    // Nothing credited, exactly as on any other refusal: the ranker must not learn from a
+    // sentence no reader was ever shown.
+    expect(out.cited).toEqual([]);
+  });
+
   it("says so when nothing matched at all, without calling the model", async () => {
     corpus();
     const provider = chat({ answer: "anything", used: [1] });
@@ -74,10 +112,10 @@ describe("answerFromKnowledge", () => {
     expect(out.unavailable).toContain("No local summary model");
   });
 
-  /* A model that cites [7] of six sources must not be able to credit something it was never
-   * shown. The feedback loop reads these citations, so a bogus one would teach the ranker about
-   * an event that did not happen. */
-  it("ignores a citation that points at nothing", async () => {
+  /* A model that cites [7] of six sources is inventing its own provenance, and the sentence goes
+   * with it. It used to be shown with the credit quietly withheld -- which protected the ranker
+   * and told the reader nothing: an unbacked sentence reads exactly like a backed one. */
+  it("drops a sentence whose citation points at nothing", async () => {
     corpus();
     const out = await answerFromKnowledge(
       t.db,
@@ -86,7 +124,8 @@ describe("answerFromKnowledge", () => {
       NOW,
     );
     expect(out.cited).toEqual([]);
-    expect(out.text).toBe("Something [7].");
+    expect(out.text).toBe("");
+    expect(out.claims[0].reason).toBe("unknown-source");
   });
 });
 
@@ -138,6 +177,8 @@ describe("sourceWeight", () => {
           text: "an answer",
           sources: [{ itemId, chunkId: 1, title: "", type: "note", excerpt: "", score: 1 }],
           cited: opts.cited ? [{ itemId, chunkId: 1, title: "", type: "note", excerpt: "", score: 1 }] : [],
+          claims: [],
+          dropped: 0,
         },
         [{ itemId, chunkId: 1 }],
         NOW,

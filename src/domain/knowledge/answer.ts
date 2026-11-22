@@ -5,6 +5,7 @@ import type { ChatProvider } from "@/providers/chat";
 import { search, type SearchResult } from "@/domain/search";
 import { getItemChunks } from "@/domain/items";
 import { sourceWeight } from "./feedback";
+import { verifyClaims, type Claim } from "./verify";
 
 /** How many items are retrieved before weighting, and how many survive into the prompt. */
 const RETRIEVE = 12;
@@ -40,9 +41,29 @@ export interface Answer {
    * populated either way.
    */
   cited: Source[];
+  /**
+   * Every sentence the model wrote, and whether the source it cited actually says it.
+   *
+   * `text` is only the supported ones. This is the whole list, refusals included, because "it
+   * tried to tell you something and could not back it up" is information -- about the corpus, and
+   * about how far the model is reaching.
+   */
+  claims: Claim[];
+  /** Sentences removed by the check. Zero on almost every answer, and worth watching when not. */
+  dropped: number;
   /** Why there is no answer, when there is none: no model, nothing retrieved, nothing grounded. */
   unavailable?: string;
 }
+
+/** What every path that has no answer returns, so a caller never has to test for absent fields. */
+const nothing = (sources: Source[], unavailable: string): Answer => ({
+  text: "",
+  sources,
+  cited: [],
+  claims: [],
+  dropped: 0,
+  unavailable,
+});
 
 const Grounded = z.object({
   /** Empty when the sources do not answer it. Enforced in the prompt and checked below. */
@@ -62,6 +83,9 @@ const SYSTEM = [
   "4. List in `used` the numbers of the sources you actually drew on, and no others.",
   "5. Be brief. Two or three sentences unless the question genuinely needs more.",
   "6. Where sources disagree, say so and cite both rather than picking one.",
+  "7. Every sentence is checked against the source it cites, and any sentence stating a name,",
+  "   date or number that source does not contain is deleted before the user sees it. Write one",
+  "   fact per sentence and cite each one, or your answer will arrive full of holes.",
 ].join("\n");
 
 /**
@@ -103,12 +127,10 @@ export async function answerFromKnowledge(
   now = new Date(),
 ): Promise<Answer> {
   const asked = question.trim();
-  if (!asked) return { text: "", sources: [], cited: [], unavailable: "Nothing was asked" };
+  if (!asked) return nothing([], "Nothing was asked");
 
   const hits = await search(db, deps.embed, asked, {}, RETRIEVE);
-  if (hits.length === 0) {
-    return { text: "", sources: [], cited: [], unavailable: "Nothing in the knowledge base matched that" };
-  }
+  if (hits.length === 0) return nothing([], "Nothing in the knowledge base matched that");
 
   const ranked = hits
     .map((hit) => ({ hit, weight: sourceWeight(db, hit.item.id, now) }))
@@ -127,7 +149,7 @@ export async function answerFromKnowledge(
   if (!deps.chat) {
     // The sources are worth handing back even with no model to read them: this is then the search
     // results, which is strictly more than nothing and the same shape the caller already handles.
-    return { text: "", sources, cited: [], unavailable: "No local summary model, so these are the sources only" };
+    return nothing(sources, "No local summary model, so these are the sources only");
   }
 
   const grounded = Grounded.parse(
@@ -146,11 +168,19 @@ export async function answerFromKnowledge(
   );
 
   const text = grounded.answer.trim();
-  if (!text) return { text: "", sources, cited: [], unavailable: "The sources do not answer that" };
+  if (!text) return nothing(sources, "The sources do not answer that");
 
-  // Only what it said it used, and only numbers that exist. A model that cites [7] of six sources
-  // must not be able to credit a source that was never shown to it -- the feedback loop reads
-  // these, so a bogus citation would teach the ranker something that never happened.
-  const cited = [...new Set(grounded.used)].filter((n) => n >= 1 && n <= sources.length).map((n) => sources[n - 1]);
-  return { text, sources, cited };
+  // What it wrote is a draft until it has been checked against what it was shown. Sentences whose
+  // citation is missing, invented, or does not contain the figure or name they state are removed
+  // here rather than shown with a caveat: a caveat on a fluent sentence is read as a sentence.
+  const checked = verifyClaims(text, sources);
+  if (!checked.text) {
+    return { ...nothing(sources, "Nothing it said could be traced to your notes"), claims: checked.claims, dropped: checked.dropped };
+  }
+
+  // The surviving sentences' own citations, not the model's `used` list. Both are the model's
+  // word, but these are the ones a check agreed with -- and the feedback loop reads this, so an
+  // unverified citation would teach the ranker from a sentence nobody is ever shown.
+  const cited = checked.cited.map((n) => sources[n - 1]);
+  return { text: checked.text, sources, cited, claims: checked.claims, dropped: checked.dropped };
 }

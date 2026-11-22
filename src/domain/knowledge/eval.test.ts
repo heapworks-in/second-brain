@@ -51,14 +51,18 @@ describe("runRefusalEval", () => {
     expect(report.invented).toEqual([]);
   });
 
-  it("names what it invented when it answered anyway", async () => {
+  /* What is left for an eval to catch once the claim check is in front of it. An answer made of
+   * invented words no longer reaches here -- `verifyClaims` removes it -- so the residue is an
+   * answer built honestly out of the sources that simply is not an answer to the question. No
+   * check on provenance can see that, because every word of it is genuinely in the notes. */
+  it("names what it answered with when it should have declined", async () => {
     corpus();
     const report = await runRefusalEval(
       t.db,
-      { embed: null, chat: chat({ answer: "We decided on usage-based pricing [1].", used: [1] }) },
+      { embed: null, chat: chat({ answer: "The audit finishes before the freeze lifts [1].", used: [1] }) },
       [{ question: "what did we decide about pricing?" }],
     );
     expect(report.refusalRate).toBe(0);
-    expect(report.invented[0].answered).toContain("usage-based");
+    expect(report.invented[0].answered).toContain("audit");
   });
 });
